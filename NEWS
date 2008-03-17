@@ -1,0 +1,31 @@
+ext3grep-0.0.4
+
+	Commandline option --histogram: Fixed initialization of commandline_before
+	  when --before is not given and time_t is signed.
+	Use new struct Inode instead of ext3_inode. Use inode directly from
+	what was read from disk without copying them first (sizeof(Inode) is
+	equal to the real inode size on disk, so this is possible). Use
+	accessors for every access to an inode.
+
+ext3grep-0.0.3
+
+	Using e2progs headers instead of kernel headers.
+	Print inode when assert(first_block) fails.
+	Changed license from GPL3 to GPL2.
+	Commandline option --version: Print correct version of ext3grep .
+	Commandline option --zeroed-inodes: Does not need parameter.
+	Fixed compiler warning on 32-bit.
+	Use i_reserved2 instead of i_reserved1 to store inode number (for debugging purposes only, see HOWTO).
+	EXT3_ORPHAN_FS is only used in kernel memory, remove code to print it.
+
+ext3grep-0.0.2
+
+	Added a temporary workaround to compile with linux headers 2.6.24.
+
+ext3grep-0.0.1
+
+	Clean up of build system.
+
+ext3grep-0.0.0
+
+	First public release.

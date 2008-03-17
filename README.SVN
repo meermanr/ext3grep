@@ -1,0 +1,15 @@
+Getting source from SVN
+-----------------------
+
+See http://code.google.com/p/ext3grep/source/checkout
+
+Initial Initialisation
+----------------------
+
+If you checked out this directory with svn, then you will need to execute:
+
+./autogen.sh
+
+You only need to do this once.
+
+After that please read INSTALL.

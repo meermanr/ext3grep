@@ -1,3 +1,7 @@
+ext3grep-0.0.5
+
+	Use mmap(2) for the inode tables.
+
 ext3grep-0.0.4
 
 	Commandline option --histogram: Fixed initialization of commandline_before

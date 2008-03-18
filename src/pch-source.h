@@ -5,9 +5,11 @@
 #include "ext3.h"
 #include <sys/time.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <unistd.h>
 #include <utime.h>
+#include <sys/mman.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <regex.h>

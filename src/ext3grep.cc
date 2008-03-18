@@ -27,11 +27,13 @@
 #include <asm/byteorder.h>
 #include "ext3.h"
 #include <utime.h>
+#include <sys/mman.h>
 #include <cassert>
 #include <ctime>
 #include <cstdlib>
 #include <getopt.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <cerrno>
 #include <fstream>
 #include <iostream>
@@ -46,6 +48,10 @@
 #endif
 
 #include "locate.h"
+
+// FIXME: move this to config.h
+#define USE_MMAP 1
+
 
 // Super block accessors.
 int inode_count(ext3_super_block const& super_block) { return super_block.s_inodes_count; }
@@ -254,9 +260,9 @@ int journal_start_;
 
 // Convert block to byte-offset.
 // Returns the offset (dd --seek) in the device file to the first byte of the block.
-static inline size_t block_to_offset(int block)
+static inline off_t block_to_offset(int block)
 {
-  size_t offset = block;
+  off_t offset = block;
   offset <<= block_size_log_;
   return offset;
 }
@@ -272,6 +278,10 @@ std::set<std::string> accepted_filenames;
 int no_filtering = 0;
 std::string device_name;
 uint32_t wrapped_journal_sequence = 0;
+#if USE_MMAP
+long page_size_;
+int device_fd;
+#endif
 
 //-----------------------------------------------------------------------------
 //
@@ -287,6 +297,9 @@ void init_consts()
   inodes_per_group_ = inodes_per_group(super_block);
   inode_size_ = inode_size(super_block);
   inode_count_ = inode_count(super_block);
+#if USE_MMAP
+  page_size_ = sysconf(_SC_PAGESIZE);
+#endif
 
   // Global arrays.
   all_inodes = new Inode* [groups_];
@@ -742,9 +755,22 @@ void load_inodes(int group)
 {
   if (!block_bitmap[group])
     load_meta_data(group);
+  // The start block of the inode table.
+  int block_number = group_descriptor_table[group].bg_inode_table;
+#if USE_MMAP
+  int const blocks_per_page = page_size_ / block_size_;
+  off_t page = block_number / blocks_per_page;
+  off_t page_aligned_offset = page * page_size_;
+  off_t offset = block_to_offset(block_number);
+  // Use mmap to avoid running out of memory.
+  all_inodes[group] = reinterpret_cast<Inode*>(
+      (char*)mmap(NULL, inodes_per_group_ * inode_size_ + (offset - page_aligned_offset),
+          PROT_READ, MAP_PRIVATE | MAP_NORESERVE, device_fd, page_aligned_offset) +
+	  (offset - page_aligned_offset));
+#else
   // Load all inodes into memory.
   all_inodes[group] = new Inode[inodes_per_group_];	// sizeof(Inode) == inode_size_
-  device.seekg(block_to_offset(group_descriptor_table[group].bg_inode_table));
+  device.seekg(block_to_offset(block_number));
   device.read(reinterpret_cast<char*>(all_inodes[group]), inodes_per_group_ * inode_size_);
   assert(device.good());
 #ifdef DEBUG
@@ -752,6 +778,7 @@ void load_inodes(int group)
   // during debugging of this program in gdb. It is not used anywhere.
   for (int ino = 0; ino < inodes_per_group_; ++ino)
     all_inodes[group][ino].set_reserved2(ino + 1 + group * inodes_per_group_);
+#endif
 #endif
 }
 
@@ -790,6 +817,10 @@ int main(int argc, char* argv[])
   device_name = *argv;
   device.open(*argv);
   assert(device.good());
+#if USE_MMAP
+  device_fd = open(*argv, O_RDONLY);
+  assert(device_fd != -1);
+#endif
 
   // Read the first superblock.
   device.seekg(SUPER_BLOCK_OFFSET);
@@ -1336,6 +1367,7 @@ int main(int argc, char* argv[])
     std::cout << "    --help                 Show all possible command line options.\n";
   }
 
+#if 0
   // Clean up.
   if (commandline_action)
   {
@@ -1354,8 +1386,12 @@ int main(int argc, char* argv[])
     delete [] all_inodes;
     delete [] group_descriptor_table;
   }
+#endif
 
   device.close();
+#if USE_MMAP
+  close(device_fd);
+#endif
 }
 
 //-----------------------------------------------------------------------------

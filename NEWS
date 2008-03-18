@@ -4,6 +4,7 @@ ext3grep-0.0.5
 	PCH dependency problem was fixed.
 	Write output to directory "RESTORED_FILES" instead of to ".".
 	Fixed a bug that prevented the recovery of files in the root.
+	Fixed infinite loop when --journal-transaction is out of range.
 
 ext3grep-0.0.4
 

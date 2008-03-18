@@ -3458,25 +3458,31 @@ void handle_commandline_journal_transaction(void)
       std::cout << "The sequences numbers found are in the range [" << min_sequence << ", " << max_sequence << "].\n";
     if ((size_t)commandline_journal_transaction < max_sequence)
     {
-      prev = commandline_journal_transaction;
-      do
+      if ((size_t)commandline_journal_transaction > min_sequence)
       {
-        --prev;
-	iter = sequence_transaction_map.find(prev);
+	prev = commandline_journal_transaction;
+	do
+	{
+	  --prev;
+	  iter = sequence_transaction_map.find(prev);
+	}
+	while(iter == sequence_transaction_map.end());
       }
-      while(iter == sequence_transaction_map.end());
     }
     else if ((size_t)commandline_journal_transaction > min_sequence)
       prev = max_sequence;
     if ((size_t)commandline_journal_transaction > min_sequence)
     {
-      next = commandline_journal_transaction;
-      do
+      if ((size_t)commandline_journal_transaction < max_sequence)
       {
-        ++next;
-	iter = sequence_transaction_map.find(next);
+	next = commandline_journal_transaction;
+	do
+	{
+	  ++next;
+	  iter = sequence_transaction_map.find(next);
+	}
+	while(iter == sequence_transaction_map.end());
       }
-      while(iter == sequence_transaction_map.end());
     }
     else if ((size_t)commandline_journal_transaction < max_sequence)
       next = min_sequence;

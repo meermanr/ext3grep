@@ -49,6 +49,15 @@ dnl Add --enable-pch (USE_PCH (macro)) option.
 dnl Update USE_PCH (automake conditional) and PCHFLAGS accordingly.
 CW_PCHFLAGS
 
+dnl Add --enable-mmap option.
+dnl Sets USE_MMAP appropriately.
+AC_ARG_ENABLE(mmap, [  --enable-mmap           Use mmap for inode tables instead of operator new @<:@no@:>@])
+if test x"$enable_mmap" = x"yes"; then	# --enable-mmap given.
+  CXXFLAGS="$CXXFLAGS -DUSE_MMAP=1"
+else
+  CXXFLAGS="$CXXFLAGS -DUSE_MMAP=0"
+fi
+
 dnl Each Makefile.am should use DEFS = @DEFS@. Set DEFS here.
 DEFS="-DHAVE_CONFIG_H"
 AC_SUBST(DEFS)

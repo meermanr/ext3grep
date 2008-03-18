@@ -1,9 +1,6 @@
 ## Process this file with automake to generate Makefile.in
 
 AUTOMAKE_OPTIONS = foreign
-
-SUBDIRS = .
-
 EXTRA_DIST = pch-source.h
 
 bin_PROGRAMS = ext3grep
@@ -32,13 +29,13 @@ if USE_PCH
 @Makefilein@endif
 ext3grep_CXXFLAGS += @PCHFLAGS@
 
-APPLICATIONSUM := $(shell echo "$(CXXFLAGS)" | md5sum | sed -e 's/ .*//')
+APPLICATIONSUM := $(shell echo "$(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ext3grep_CXXFLAGS)" | md5sum | sed -e 's/ .*//')
 
 BUILT_SOURCES += pch.h.gch/$(APPLICATIONSUM)
 
-pch.h.gch/$(APPLICATIONSUM): $(srcdir)/pch-source.h Makefile
-	@rm -f $@
-	@test -d pch.h.gch || mkdir pch.h.gch
+pch.h.gch/$(APPLICATIONSUM): $(srcdir)/pch-source.h
+	@rm -rf pch.h.gch
+	@mkdir pch.h.gch
 	@test -d $(DEPDIR) || mkdir $(DEPDIR)
 	@mkdir -p empty.pch.h
 	@touch empty.pch.h/pch.h
@@ -49,6 +46,7 @@ pch.h.gch/$(APPLICATIONSUM): $(srcdir)/pch-source.h Makefile
 	fi
 	$(CXX) -Iempty.pch.h $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ext3grep_CXXFLAGS) \
 	  -c -o $@ $(srcdir)/pch-source.h
+	test ! -e sys.h || touch sys.h
 	@rm empty.pch.h/pch.h
 	@rmdir empty.pch.h
 

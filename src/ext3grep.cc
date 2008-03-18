@@ -49,10 +49,6 @@
 
 #include "locate.h"
 
-// FIXME: move this to config.h
-#define USE_MMAP 1
-
-
 // Super block accessors.
 int inode_count(ext3_super_block const& super_block) { return super_block.s_inodes_count; }
 int block_count(ext3_super_block const& super_block) { return super_block.s_blocks_count; }
@@ -272,6 +268,9 @@ std::ifstream device;
 uint64_t** inode_bitmap;
 uint64_t** block_bitmap;
 Inode** all_inodes;
+#if USE_MMAP
+void** all_mmaps;
+#endif
 ext3_group_desc* group_descriptor_table;
 char* inodes_buf;
 std::set<std::string> accepted_filenames;
@@ -303,6 +302,9 @@ void init_consts()
 
   // Global arrays.
   all_inodes = new Inode* [groups_];
+#if USE_MMAP
+  all_mmaps = new void* [groups_];
+#endif
   block_bitmap = new uint64_t* [groups_];
   // We use this array to know of which groups we loaded the metadata. Therefore zero it out.
   std::memset(block_bitmap, 0, sizeof(uint64_t*) * groups_);
@@ -763,10 +765,9 @@ void load_inodes(int group)
   off_t page_aligned_offset = page * page_size_;
   off_t offset = block_to_offset(block_number);
   // Use mmap to avoid running out of memory.
-  all_inodes[group] = reinterpret_cast<Inode*>(
-      (char*)mmap(NULL, inodes_per_group_ * inode_size_ + (offset - page_aligned_offset),
-          PROT_READ, MAP_PRIVATE | MAP_NORESERVE, device_fd, page_aligned_offset) +
-	  (offset - page_aligned_offset));
+  all_mmaps[group] = mmap(NULL, inodes_per_group_ * inode_size_ + (offset - page_aligned_offset),
+          PROT_READ, MAP_PRIVATE | MAP_NORESERVE, device_fd, page_aligned_offset);
+  all_inodes[group] = reinterpret_cast<Inode*>((char*)all_mmaps[group] + (offset - page_aligned_offset));
 #else
   // Load all inodes into memory.
   all_inodes[group] = new Inode[inodes_per_group_];	// sizeof(Inode) == inode_size_
@@ -1367,7 +1368,6 @@ int main(int argc, char* argv[])
     std::cout << "    --help                 Show all possible command line options.\n";
   }
 
-#if 0
   // Clean up.
   if (commandline_action)
   {
@@ -1378,15 +1378,21 @@ int main(int argc, char* argv[])
       {
 	delete [] inode_bitmap[group];
 	delete [] block_bitmap[group];
+#if USE_MMAP
+        munmap(all_mmaps[group], inodes_per_group_ * inode_size_ + ((char*)all_inodes[group] - (char*)all_mmaps[group]));
+#else
 	delete [] all_inodes[group];
+#endif
       }
     }
     delete [] inode_bitmap;
     delete [] block_bitmap;
     delete [] all_inodes;
+#if USE_MMAP
+    delete [] all_mmaps;
+#endif
     delete [] group_descriptor_table;
   }
-#endif
 
   device.close();
 #if USE_MMAP

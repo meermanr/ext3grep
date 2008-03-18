@@ -2,6 +2,8 @@ ext3grep-0.0.5
 
 	Added a configure option --enable-mmap to use mmap(2) for the inode tables.
 	PCH dependency problem was fixed.
+	Write output to directory "RESTORED_FILES" instead of to ".".
+	Fixed a bug that prevented the recovery of files in the root.
 
 ext3grep-0.0.4
 

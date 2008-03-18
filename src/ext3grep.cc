@@ -281,6 +281,7 @@ uint32_t wrapped_journal_sequence = 0;
 long page_size_;
 int device_fd;
 #endif
+static std::string const outputdir = "RESTORED_FILES/";
 
 //-----------------------------------------------------------------------------
 //
@@ -1146,6 +1147,35 @@ int main(int argc, char* argv[])
 	  print_directory(block, commandline_block);
       }
       delete [] block;
+    }
+  }
+  // Make sure the output directory exists.
+  if (!commandline_restore_file.empty() || commandline_restore_all)
+  {
+    struct stat statbuf;
+    if (stat(outputdir.c_str(), &statbuf) == -1)
+    {
+      int error = errno;
+      if (error != ENOENT)
+      {
+	std::cout << std::flush;
+	std::cerr << "ERROR: stat: " << outputdir << ": " << strerror(error) << std::endl;
+	exit(EXIT_FAILURE);
+      }
+      else if (mkdir(outputdir.c_str(), 0755) == -1 && errno != EEXIST)
+      {
+	perror("mkdir");
+	std::cout << std::flush;
+	std::cerr << "Failed to create output directory " << outputdir << '\n';
+	exit(EXIT_FAILURE);
+      }
+      std::cout << "Writing output to directory " << outputdir << std::endl;
+    }
+    else if (!S_ISDIR(statbuf.st_mode))
+    {
+      std::cout << std::flush;
+      std::cerr << "ERROR: " << outputdir << " exists but is not a directory!\n";
+      exit(EXIT_FAILURE);
     }
   }
   // Handle --dump-names
@@ -4604,7 +4634,10 @@ void init_files(void)
     // Fill path_to_inode_map.
     for (int filename_index = 0; filename_index < number_of_files; ++filename_index)
     {
-      std::string full_path = directory_iter->first + '/' + index_to_filename[filename_index];
+      std::string full_path = directory_iter->first;
+      if (!full_path.empty())
+        full_path += '/';
+      full_path += index_to_filename[filename_index];
       int inode = 0;
       for (int dirblock_index = 0; dirblock_index < number_of_directory_blocks; ++dirblock_index)
         if ((inode = file_dirblock_matrix[sort_array[dirblock_index].index()][filename_index]))
@@ -4853,6 +4886,8 @@ char const* mode_str(int16_t i_mode)
 
 void restore_file(std::string const& outfile)
 {
+  assert(!outfile.empty());
+  assert(outfile[0] != '/');
   init_files();
   int inodenr;
   path_to_inode_map_type::iterator inode_iter = path_to_inode_map.find(outfile);
@@ -4874,13 +4909,13 @@ void restore_file(std::string const& outfile)
   {
     std::string dirname = outfile.substr(0, slash);
     struct stat statbuf;
-    if (lstat(dirname.c_str(), &statbuf) == -1)
+    if (lstat((outputdir + dirname).c_str(), &statbuf) == -1)
     {
       int error = errno;
       if (error != ENOENT)
       {
 	std::cout << std::flush;
-	std::cerr << "WARNING: lstat: " << dirname << ": " << strerror(error) << std::endl;
+	std::cerr << "WARNING: lstat: " << (outputdir + dirname) << ": " << strerror(error) << std::endl;
 	std::cout << "Failed to recover " << outfile << '\n';
 	return;
       }
@@ -4890,26 +4925,27 @@ void restore_file(std::string const& outfile)
     else if (!S_ISDIR(statbuf.st_mode))
     {
       std::cout << std::flush;
-      std::cerr << "WARNING: Failed to recover " << outfile << ": " << dirname << " exists but is not a directory!\n";
+      std::cerr << "ERROR: Failed to recover " << outfile << ": " << (outputdir + dirname) << " exists but is not a directory!\n";
       exit(EXIT_FAILURE);
     }
   }
+  std::string outputdir_outfile = outputdir + outfile;
   if (is_directory(real_inode))
   {
-    if (mkdir(outfile.c_str(), inode_mode_to_mkdir_mode(real_inode.mode())) == -1 && errno != EEXIST)
+    if (mkdir(outputdir_outfile.c_str(), inode_mode_to_mkdir_mode(real_inode.mode())) == -1 && errno != EEXIST)
     {
       perror("mkdir");
       std::cout << std::flush;
-      std::cerr << "Could not create directory " << outfile << '\n';
+      std::cerr << "Could not create directory " << outputdir_outfile << '\n';
       exit(EXIT_FAILURE);
     }
     struct utimbuf ub;
     ub.actime = real_inode.atime();
     ub.modtime = real_inode.ctime();
-    if (utime(outfile.c_str(), &ub) == -1)
+    if (utime(outputdir_outfile.c_str(), &ub) == -1)
     {
       int error = errno;
-      std::cout << "WARNING: Failed to set access and modification time on " << outfile << ": " << strerror(error) << '\n';
+      std::cout << "WARNING: Failed to set access and modification time on " << outputdir_outfile << ": " << strerror(error) << '\n';
     }
   }
   else
@@ -4928,10 +4964,10 @@ void restore_file(std::string const& outfile)
     if (is_regular_file(inode))
     {
       std::ofstream out;
-      out.open(outfile.c_str());
+      out.open(outputdir_outfile.c_str());
       if (!out)
       {
-	std::cout << "Failed to open \"" << outfile << "\".\n";
+	std::cout << "Failed to open \"" << outputdir_outfile << "\".\n";
 	return;
       }
       Data data(out, inode.size());
@@ -4939,21 +4975,21 @@ void restore_file(std::string const& outfile)
       iterate_over_all_blocks_of(inode, restore_file_action, &data);
       assert(out.good());
       out.close();
-      if (chmod(outfile.c_str(), inode_mode_to_mkdir_mode(inode.mode())) == -1)
+      if (chmod(outputdir_outfile.c_str(), inode_mode_to_mkdir_mode(inode.mode())) == -1)
       {
         int error = errno;
 	std::cout << std::flush;
-	std::cout << "WARNING: failed to set file mode on " << outfile << '\n';
+	std::cout << "WARNING: failed to set file mode on " << outputdir_outfile << '\n';
 	errno = error;
 	perror("chmod");
       }
       struct utimbuf ub;
       ub.actime = inode.atime();
       ub.modtime = inode.ctime();
-      if (utime(outfile.c_str(), &ub) == -1)
+      if (utime(outputdir_outfile.c_str(), &ub) == -1)
       {
 	int error = errno;
-	std::cout << "WARNING: Failed to set access and modification time on " << outfile << ": " << strerror(error) << '\n';
+	std::cout << "WARNING: Failed to set access and modification time on " << outputdir_outfile << ": " << strerror(error) << '\n';
 	return;
       }
     }
@@ -4968,11 +5004,11 @@ void restore_file(std::string const& outfile)
       }
       else
       {
-        if (symlink(symlink_name.str().c_str(), outfile.c_str()) == -1)
+        if (symlink(symlink_name.str().c_str(), outputdir_outfile.c_str()) == -1)
 	{
 	  int error = errno;
 	  std::cout << std::flush;
-	  std::cout << "WARNING: symlink: " << outfile << ": " << strerror(error) << '\n';
+	  std::cout << "WARNING: symlink: " << outputdir_outfile << ": " << strerror(error) << '\n';
 	  return;
 	}
 	struct timeval tvp[2];
@@ -4980,10 +5016,10 @@ void restore_file(std::string const& outfile)
 	tvp[0].tv_usec = 0;
 	tvp[1].tv_sec = inode.ctime();
 	tvp[1].tv_usec = 0;
-        if (lutimes(outfile.c_str(), tvp) == -1)
+        if (lutimes(outputdir_outfile.c_str(), tvp) == -1)
 	{
 	  int error = errno;
-	  std::cout << "WARNING: Failed to set access and modification time on " << outfile << ": " << strerror(error) << '\n';
+	  std::cout << "WARNING: Failed to set access and modification time on " << outputdir_outfile << ": " << strerror(error) << '\n';
 	  return;
 	}
       }

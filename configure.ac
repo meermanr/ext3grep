@@ -31,7 +31,7 @@ dnl Include maintainer mode targets
 AM_MAINTAINER_MODE
 
 dnl Because we use cwautomacros.
-CW_AUTOMACROS([20080123])
+CW_AUTOMACROS([20080319])
 
 dnl Demand at least version 2.57 of autoconf.
 AC_PREREQ(2.57)

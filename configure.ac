@@ -51,11 +51,11 @@ CW_PCHFLAGS
 
 dnl Add --enable-mmap option.
 dnl Sets USE_MMAP appropriately.
-AC_ARG_ENABLE(mmap, [  --enable-mmap           Use mmap for inode tables instead of operator new @<:@no@:>@])
-if test x"$enable_mmap" = x"yes"; then	# --enable-mmap given.
-  CXXFLAGS="$CXXFLAGS -DUSE_MMAP=1"
-else
+AC_ARG_ENABLE(mmap, [  --enable-mmap           Use mmap for inode tables instead of operator new @<:@yes@:>@])
+if test x"$enable_mmap" = x"no"; then	# --disable-mmap given.
   CXXFLAGS="$CXXFLAGS -DUSE_MMAP=0"
+else
+  CXXFLAGS="$CXXFLAGS -DUSE_MMAP=1"
 fi
 
 dnl Each Makefile.am should use DEFS = @DEFS@. Set DEFS here.

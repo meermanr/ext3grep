@@ -1,3 +1,7 @@
+ext3grep-0.1.1
+
+	Added largefile support; 64-bit off_t.
+
 ext3grep-0.1.0
 
 	Now using journal to find inode numbers of extended directory blocks!

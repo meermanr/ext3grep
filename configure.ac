@@ -6,7 +6,7 @@ dnl CW_VERSION_REVISION            : Increment every public release; or set to 0
 
 define(CW_VERSION_MAJOR, 0)
 define(CW_VERSION_MINOR, 1)
-define(CW_VERSION_REVISION, 0)
+define(CW_VERSION_REVISION, 1)
 
 define(CW_PACKAGE_NAME, [ext3grep])
 define(CW_BUGREPORT, [carlo@alinoe.com])
@@ -64,6 +64,9 @@ AC_SUBST(DEFS)
 
 dnl Checks for other programs.
 AC_PROG_INSTALL
+
+dnl Include support for 64 file offsets if supported.
+AC_SYS_LARGEFILE
 
 dnl Include flags needed for the e2progs header files.
 CXXFLAGS="$CXXFLAGS `pkg-config --cflags ext2fs`"

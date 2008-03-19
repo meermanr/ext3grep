@@ -170,7 +170,7 @@ std::string parent_directory(int blocknr, std::set<std::string> const& filenames
 #endif
     };
     regex_t preg;
-    for (unsigned int re = 0; re < sizeof(table) / sizeof(table[0]); ++re)
+    for (size_t re = 0; re < sizeof(table) / sizeof(table[0]); ++re)
     {
       int hits = 0;
       regcomp(&preg, table[re].regexp, REG_EXTENDED|REG_NOSUB);

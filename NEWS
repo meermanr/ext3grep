@@ -1,5 +1,7 @@
-ext3grep-0.0.5
+ext3grep-0.1.0
 
+	Now using journal to find inode numbers of extended directory blocks!
+	Added detection of reused or corrupted indirect blocks, aborting iteration.
 	Added a configure option --enable-mmap to use mmap(2) for the inode tables.
 	PCH dependency problem was fixed.
 	Write output to directory "RESTORED_FILES" instead of to ".".

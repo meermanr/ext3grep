@@ -1114,7 +1114,8 @@ int main(int argc, char* argv[])
 	  else
 	  {
 	    // Run over all blocks.
-	    iterate_over_all_blocks_of(inode, print_directory_action);
+	    bool reused_or_corrupted_indirect_block1 = iterate_over_all_blocks_of(inode, print_directory_action);
+	    assert(!reused_or_corrupted_indirect_block1);
 	  }
 	}
 	else
@@ -1325,7 +1326,8 @@ int main(int argc, char* argv[])
       Inode& ino = get_inode(inode);
       found_block = false;
       block_looking_for = commandline_search_inode;
-      iterate_over_all_blocks_of(ino, find_block_action);
+      bool reused_or_corrupted_indirect_block2 = iterate_over_all_blocks_of(ino, find_block_action);
+      assert(!reused_or_corrupted_indirect_block2);
       if (found_block)
         std::cout << ' ' << inode << std::flush;
     }
@@ -2491,7 +2493,8 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
       ++depth;
       if (!deleted && allocated && !reallocated)	// Existing directory?
       {
-	iterate_over_all_blocks_of(get_inode(dir_entry.inode), iterate_over_existing_directory_action, &idata);
+	bool reused_or_corrupted_indirect_block3 = iterate_over_all_blocks_of(get_inode(dir_entry.inode), iterate_over_existing_directory_action, &idata);
+	assert(!reused_or_corrupted_indirect_block3);
       }
       else
       {
@@ -3225,7 +3228,8 @@ static void init_journal(void)
   // Find the block range used by the journal.
   smallest_block_nr = block_count(super_block);
   largest_block_nr = 0;
-  iterate_over_all_blocks_of(journal_inode, find_blocknr_range_action, NULL, indirect_bit | direct_bit);
+  bool reused_or_corrupted_indirect_block4 = iterate_over_all_blocks_of(journal_inode, find_blocknr_range_action, NULL, indirect_bit | direct_bit);
+  assert(!reused_or_corrupted_indirect_block4);
   assert(smallest_block_nr < largest_block_nr);		// A non-external journal must have a size.
   min_journal_block = smallest_block_nr;
   max_journal_block = largest_block_nr + 1;
@@ -3234,10 +3238,12 @@ static void init_journal(void)
   int size = (max_journal_block - min_journal_block + 63) / 64;
   is_indirect_block_in_journal_bitmap = new uint64_t [size];
   memset(is_indirect_block_in_journal_bitmap, 0, size * sizeof(uint64_t));
-  iterate_over_all_blocks_of(journal_inode, indirect_journal_block_action, NULL, indirect_bit);
+  bool reused_or_corrupted_indirect_block5 = iterate_over_all_blocks_of(journal_inode, indirect_journal_block_action, NULL, indirect_bit);
+  assert(!reused_or_corrupted_indirect_block5);
   journal_block_bitmap = new uint64_t [size];
   memset(journal_block_bitmap, 0, size * sizeof(uint64_t));
-  iterate_over_all_blocks_of(journal_inode, fill_journal_bitmap_action, NULL, indirect_bit | direct_bit);
+  bool reused_or_corrupted_indirect_block6 = iterate_over_all_blocks_of(journal_inode, fill_journal_bitmap_action, NULL, indirect_bit | direct_bit);
+  assert(!reused_or_corrupted_indirect_block6);
   // Initialize the Descriptors.
   std::cout << "Loading journal descriptors..." << std::flush;
   wrapped_journal_sequence = 0;
@@ -3301,7 +3307,8 @@ static void init_journal(void)
         if (inode[i].dtime() != 0 || inode[i].atime() == 0 || inode[i].block()[0] == 0)
 	  continue;
 	// Run over all blocks of the directory inode.
-	iterate_over_all_blocks_of(inode[i], directory_inode_action, &inode_number);
+	bool reused_or_corrupted_indirect_block7 = iterate_over_all_blocks_of(inode[i], directory_inode_action, &inode_number);
+	assert(!reused_or_corrupted_indirect_block7);
       }
     }
   }
@@ -5029,9 +5036,14 @@ void restore_file(std::string const& outfile)
       }
       Data data(out, inode.size());
       std::cout << "Restoring " << outfile << '\n';
-      iterate_over_all_blocks_of(inode, restore_file_action, &data);
+      bool reused_or_corrupted_indirect_block8 = iterate_over_all_blocks_of(inode, restore_file_action, &data);
       assert(out.good());
       out.close();
+      if (reused_or_corrupted_indirect_block8)
+      {
+        std::cout << "WARNING: Failed to restore " << outfile << ": encountered a reused or corrupted (double/triple) indirect block!\n";
+	// FIXME: file should be renamed.
+      }
       if (chmod(outputdir_outfile.c_str(), inode_mode_to_mkdir_mode(inode.mode())) == -1)
       {
         int error = errno;

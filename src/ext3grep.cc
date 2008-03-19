@@ -3308,7 +3308,11 @@ static void init_journal(void)
 	  continue;
 	// Run over all blocks of the directory inode.
 	bool reused_or_corrupted_indirect_block7 = iterate_over_all_blocks_of(inode[i], directory_inode_action, &inode_number);
-	assert(!reused_or_corrupted_indirect_block7);
+	if (reused_or_corrupted_indirect_block7)
+	{
+	  std::cout << "Note: Block " << tag->Descriptor::block() << " in the journal contains a copy of inode " << inode_number <<
+	      " which is a directory, but this directory has reused or corrupted (double/triple) indirect blocks.\n";
+	}
       }
     }
   }

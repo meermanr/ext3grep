@@ -105,7 +105,7 @@ bitmap_ptr get_bitmap_mask(unsigned int bit)
 
 // Convert byte-offset to block.
 // Returns the block number that contains the byte at offset bytes from the start of the device file.
-int offset_to_block(ext3_super_block const& super_block, size_t offset)
+int offset_to_block(ext3_super_block const& super_block, off_t offset)
 {
   return offset / block_size(super_block);
 }

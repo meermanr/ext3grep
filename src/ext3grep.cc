@@ -547,15 +547,20 @@ is_directory_type is_directory(unsigned char* block, int blocknr, bool start_blo
       }
     }
   if (ok && delayed_warning)
+  {
+    std::cout << std::flush;
     std::cerr << delayed_warning.str();
+    std::cerr << std::flush;
+  }
   if (!ok && !illegal && accepted_filenames.find(std::string(dir_entry->name, dir_entry->name_len)) == accepted_filenames.end())
   {
+    std::cout << std::flush;
     std::cerr << "\nWARNING: Rejecting possible directory (block #" << blocknr << ") because an entry contains legal but unlikely characters: '";
     std::cerr.write(dir_entry->name, dir_entry->name_len);
     std::cerr << "'.\n";
     std::cerr << "If this looks like a filename to you, you must add --accept='";
     std::cerr.write(dir_entry->name, dir_entry->name_len);
-    std::cerr << "' as commandline parameter!\n";
+    std::cerr << "' as commandline parameter!" << std::endl;
   }
   return ok ? (is_start ? isdir_start : isdir_extended) : isdir_no;
 }
@@ -802,7 +807,8 @@ int main(int argc, char* argv[])
   if (!device.good())
   {
     int error = errno;
-    std::cerr << progname << ": Failed to read-only open device \"" << *argv << "\": " << strerror(error) << std::endl;
+    std::cout << std::flush;
+    std::cerr << progname << ": failed to read-only open device \"" << *argv << "\": " << strerror(error) << std::endl;
     exit(EXIT_FAILURE);
   }
 #if USE_MMAP
@@ -810,7 +816,8 @@ int main(int argc, char* argv[])
   if (device_fd == -1)
   {
     int error = errno;
-    std::cerr << progname << ": Failed to open device \"" << *argv << "\" for reading: " << strerror(error) << std::endl;
+    std::cout << std::flush;
+    std::cerr << progname << ": failed to open device \"" << *argv << "\" for reading: " << strerror(error) << std::endl;
     exit(EXIT_FAILURE);
   }
 #endif
@@ -869,14 +876,16 @@ int main(int argc, char* argv[])
   // Check commandline options against superblock contents.
   if (commandline_journal && super_block.s_journal_dev)
   {
-    std::cerr << progname << ": --journal: The journal appears to be external.\n";
+    std::cout << std::flush;
+    std::cerr << progname << ": --journal: The journal appears to be external." << std::endl;
     exit(EXIT_FAILURE);
   }
   if (commandline_inode != -1)
   {
     if ((uint32_t)commandline_inode >= inode_count_)
     {
-      std::cerr << progname << ": --inode: inode " << commandline_inode << " is out of range. There are only " << inode_count_ << " inodes.\n";
+      std::cout << std::flush;
+      std::cerr << progname << ": --inode: inode " << commandline_inode << " is out of range. There are only " << inode_count_ << " inodes." << std::endl;
       exit(EXIT_FAILURE);
     }
     commandline_group = inode_to_group(super_block, commandline_inode);
@@ -886,7 +895,8 @@ int main(int argc, char* argv[])
   {
     if (commandline_block >= block_count(super_block))
     {
-      std::cerr << progname << ": --block: block " << commandline_block << " is out of range. There are only " << block_count(super_block) << " blocks.\n";
+      std::cout << std::flush;
+      std::cerr << progname << ": --block: block " << commandline_block << " is out of range. There are only " << block_count(super_block) << " blocks." << std::endl;
       exit(EXIT_FAILURE);
     }
     commandline_group = block_to_group(super_block, commandline_block);
@@ -895,8 +905,9 @@ int main(int argc, char* argv[])
   {
     if (commandline_journal_block >= block_count(journal_super_block))
     {
+      std::cout << std::flush;
       std::cerr << progname << ": --journal-block: block " << commandline_journal_block << " is out of range. There are only " <<
-          block_count(journal_super_block) << " blocks in the journal.\n";
+          block_count(journal_super_block) << " blocks in the journal." << std::endl;
       exit(EXIT_FAILURE);
     }
   }
@@ -904,8 +915,9 @@ int main(int argc, char* argv[])
   {
     if ((uint32_t)commandline_show_journal_inodes >= inode_count_)
     {
+      std::cout << std::flush;
       std::cerr << progname << ": --show-journal-inodes: inode " << commandline_show_journal_inodes <<
-          " is out of range. There are only " << inode_count_ << " inodes.\n";
+          " is out of range. There are only " << inode_count_ << " inodes." << std::endl;
       exit(EXIT_FAILURE);
     }
     commandline_group = inode_to_group(super_block, commandline_show_journal_inodes);
@@ -927,7 +939,8 @@ int main(int argc, char* argv[])
     }
     else if (commandline_group < 0 || commandline_group >= groups_)
     {
-      std::cerr << progname << ": --group: group " << commandline_group << " is out of range.\n";
+      std::cout << std::flush;
+      std::cerr << progname << ": --group: group " << commandline_group << " is out of range." << std::endl;
       exit(EXIT_FAILURE);
     }
     else if (!commandline_action)
@@ -1149,18 +1162,18 @@ int main(int argc, char* argv[])
     struct stat statbuf;
     if (stat(outputdir.c_str(), &statbuf) == -1)
     {
-      int error = errno;
-      if (error != ENOENT)
+      if (errno != ENOENT)
       {
+	int error = errno;
 	std::cout << std::flush;
-	std::cerr << "ERROR: stat: " << outputdir << ": " << strerror(error) << std::endl;
+	std::cerr << progname << ": stat: " << outputdir << ": " << strerror(error) << std::endl;
 	exit(EXIT_FAILURE);
       }
       else if (mkdir(outputdir.c_str(), 0755) == -1 && errno != EEXIST)
       {
-	perror("mkdir");
+        int error = errno;
 	std::cout << std::flush;
-	std::cerr << "Failed to create output directory " << outputdir << '\n';
+	std::cerr << progname << ": failed to create output directory " << outputdir << ": " << strerror(error) << std::endl;
 	exit(EXIT_FAILURE);
       }
       std::cout << "Writing output to directory " << outputdir << std::endl;
@@ -1168,7 +1181,7 @@ int main(int argc, char* argv[])
     else if (!S_ISDIR(statbuf.st_mode))
     {
       std::cout << std::flush;
-      std::cerr << "ERROR: " << outputdir << " exists but is not a directory!\n";
+      std::cerr << progname << ": " << outputdir << " exists but is not a directory!" << std::endl;
       exit(EXIT_FAILURE);
     }
   }
@@ -1831,7 +1844,8 @@ static void decode_commandline_options(int& argc, char**& argv)
 	    commandline_depth = atoi(optarg);
 	    if (commandline_depth < 0)
 	    {
-	      std::cerr << progname << ": --depth: cannot use negative values.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --depth: cannot use negative values." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
 	    break;
@@ -1887,7 +1901,8 @@ static void decode_commandline_options(int& argc, char**& argv)
             commandline_search_inode = atoi(optarg);
 	    if (commandline_search_inode <= 0)
 	    {
-	      std::cerr << progname << ": --search-inode: block " << commandline_search_inode << " is out of range.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --search-inode: block " << commandline_search_inode << " is out of range." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
 	    ++exclusive2;
@@ -1896,7 +1911,8 @@ static void decode_commandline_options(int& argc, char**& argv)
             commandline_group = atoi(optarg);
 	    if (commandline_group < 0)
 	    {
-	      std::cerr << progname << ": --group: group " << commandline_group << " is out of range.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --group: group " << commandline_group << " is out of range." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
 	    ++exclusive1;
@@ -1905,7 +1921,8 @@ static void decode_commandline_options(int& argc, char**& argv)
             commandline_inode_to_block = atoi(optarg);
 	    if (commandline_inode_to_block < 1)
 	    {
-	      std::cerr << progname << ": --inode-to-block: inode " << commandline_inode_to_block << " is out of range.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --inode-to-block: inode " << commandline_inode_to_block << " is out of range." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
             break;
@@ -1913,7 +1930,8 @@ static void decode_commandline_options(int& argc, char**& argv)
             commandline_inode = atoi(optarg);
 	    if (commandline_inode < 1)
 	    {
-	      std::cerr << progname << ": --inode: inode " << commandline_inode << " is out of range.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --inode: inode " << commandline_inode << " is out of range." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
 	    ++exclusive1;
@@ -1923,7 +1941,8 @@ static void decode_commandline_options(int& argc, char**& argv)
             commandline_block = atoi(optarg);
 	    if (commandline_block < 0)
 	    {
-	      std::cerr << progname << ": --block: block " << commandline_block << " is out of range.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --block: block " << commandline_block << " is out of range." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
 	    ++exclusive1;
@@ -1933,7 +1952,8 @@ static void decode_commandline_options(int& argc, char**& argv)
 	    commandline_show_journal_inodes = atoi(optarg);
 	    if (commandline_show_journal_inodes < 1)
 	    {
-	      std::cerr << progname << ": --show-journal-inodes: inode " << commandline_show_journal_inodes << " is out of range.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --show-journal-inodes: inode " << commandline_show_journal_inodes << " is out of range." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
 	    ++exclusive1;
@@ -1943,7 +1963,8 @@ static void decode_commandline_options(int& argc, char**& argv)
             commandline_journal_block = atoi(optarg);
 	    if (commandline_journal_block < 0)
 	    {
-	      std::cerr << progname << ": --journal-block: block " << commandline_journal_block << " is out of range.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --journal-block: block " << commandline_journal_block << " is out of range." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
 	    ++exclusive1;
@@ -1967,7 +1988,8 @@ static void decode_commandline_options(int& argc, char**& argv)
 	      commandline_histogram = hist_group;
 	    else
 	    {
-	      std::cerr << progname << ": --histogram: " << hist_arg << ": unknown histogram type.\n";
+	      std::cout << std::flush;
+	      std::cerr << progname << ": --histogram: " << hist_arg << ": unknown histogram type." << std::endl;
 	      exit(EXIT_FAILURE);
 	    }
 	    break;
@@ -1988,17 +2010,20 @@ static void decode_commandline_options(int& argc, char**& argv)
 
   if (exclusive1 > 1)
   {
-    std::cerr << progname << ": Only one of --group, --inode, --block, --journal-block, --dump-names or --show-journal-inodes may be specified.\n";
+    std::cout << std::flush;
+    std::cerr << progname << ": Only one of --group, --inode, --block, --journal-block, --dump-names or --show-journal-inodes may be specified." << std::endl;
     exit(EXIT_FAILURE);
   }
   if (exclusive2 > 1)
   {
-    std::cerr << progname << ": Only one of --inode, --block, --search*, --journal-block, --dump-names or --show-journal-inodes may be specified.\n";
+    std::cout << std::flush;
+    std::cerr << progname << ": Only one of --inode, --block, --search*, --journal-block, --dump-names or --show-journal-inodes may be specified." << std::endl;
     exit(EXIT_FAILURE);
   }
   if (commandline_allocated && commandline_unallocated)
   {
-    std::cerr << progname << ": Only one of --allocated or --unallocated may be specified.\n";
+    std::cout << std::flush;
+    std::cerr << progname << ": Only one of --allocated or --unallocated may be specified." << std::endl;
     exit(EXIT_FAILURE);
   }
   if (commandline_dump_names)
@@ -3490,7 +3515,8 @@ static void iterate_over_journal(
 	}
 	default:
 	{
-	  std::cerr << "WARNING: iterate_over_journal: unexpected blocktype (" << blocktype << "). Journal corrupt?\n";
+	  std::cout << std::flush;
+	  std::cerr << "WARNING: iterate_over_journal: unexpected blocktype (" << blocktype << "). Journal corrupt?" << std::endl;
 	  return;
 	}
       }
@@ -3718,8 +3744,9 @@ void init_dir_inode_to_block_cache(void)
   bool have_cache = !(stat(cache_stage1.c_str(), &sb) == -1);
   if (!have_cache && errno != ENOENT)
   {
-    std::cerr << "Failed to open " << std::flush;
-    perror(cache_stage1.c_str());
+    int error = errno;
+    std::cout << std::flush;
+    std::cerr << progname << ": failed to open \"" << cache_stage1 << "\": " << strerror(error) << std::endl;
     exit(EXIT_FAILURE);
   }
   if (!have_cache)
@@ -3788,8 +3815,9 @@ void init_dir_inode_to_block_cache(void)
     cache.open(cache_stage1.c_str());
     if (!cache.is_open())
     {
-      std::cerr << "Failed to open " << std::flush;
-      perror(cache_stage1.c_str());
+      int error = errno;
+      std::cout << std::flush;
+      std::cerr << progname << ": failed to open " << cache_stage1 << ": " << strerror(error) << std::endl;
       exit(EXIT_FAILURE);
     }
     int inode;
@@ -3857,14 +3885,15 @@ void init_dir_inode_to_block_cache(void)
 	if (!first_block)
 	{
 	  std::cout << std::flush;
-	  std::cerr << "ERROR: inode " << i << " is an allocated inode that does not reference any block. "
+	  std::cerr << progname << ": inode " << i << " is an allocated inode that does not reference any block. "
 	      "This seems to indicate a corrupted file system. Manual investigation is needed." << std::endl;
 	}
 	assert(first_block);
 	// If inode is an allocated directory, then we must have found it's directory block already.
 	if (bv.empty())
 	{
-	  std::cerr << "WARNING: inode " << i << " is an allocated inode without directory block pointing to it!\n";
+	  std::cout << std::flush;
+	  std::cerr << "WARNING: inode " << i << " is an allocated inode without directory block pointing to it!" << std::endl;
 	  continue;
 	}
 	int count = 0;
@@ -4262,8 +4291,9 @@ void init_directories(void)
   bool have_cache = !(stat(cache_stage2.c_str(), &sb) == -1);
   if (!have_cache && errno != ENOENT)
   {
-    std::cerr << "Failed to open " << std::flush;
-    perror(cache_stage2.c_str());
+    int error = errno;
+    std::cout << std::flush;
+    std::cerr << progname << ": failed to open " << cache_stage2 << ": " << strerror(error) << std::endl;
     exit(EXIT_FAILURE);
   }
   if (!have_cache)
@@ -4394,9 +4424,9 @@ void init_directories(void)
     cache.open(cache_stage2.c_str());
     if (!cache.is_open())
     {
+      int error = errno;
       std::cout << " error" << std::endl;
-      std::cerr << "Failed to open " << std::flush;
-      perror(cache_stage2.c_str());
+      std::cerr << progname << ": failed to open " << cache_stage2 << ": " << strerror(error) << std::endl;
       exit(EXIT_FAILURE);
     }
     int inode;
@@ -5020,7 +5050,7 @@ void restore_file(std::string const& outfile)
     else if (!S_ISDIR(statbuf.st_mode))
     {
       std::cout << std::flush;
-      std::cerr << "ERROR: Failed to recover " << outfile << ": " << (outputdir + dirname) << " exists but is not a directory!\n";
+      std::cerr << progname << ": failed to recover " << outfile << ": " << (outputdir + dirname) << " exists but is not a directory!" << std::endl;
       exit(EXIT_FAILURE);
     }
   }
@@ -5029,9 +5059,9 @@ void restore_file(std::string const& outfile)
   {
     if (mkdir(outputdir_outfile.c_str(), inode_mode_to_mkdir_mode(real_inode.mode())) == -1 && errno != EEXIST)
     {
-      perror("mkdir");
+      int error = errno;
       std::cout << std::flush;
-      std::cerr << "Could not create directory " << outputdir_outfile << '\n';
+      std::cerr << progname << ": could not create directory " << outputdir_outfile << ": " << strerror(error) << std::endl;
       exit(EXIT_FAILURE);
     }
     struct utimbuf ub;
@@ -5078,10 +5108,8 @@ void restore_file(std::string const& outfile)
       if (chmod(outputdir_outfile.c_str(), inode_mode_to_mkdir_mode(inode.mode())) == -1)
       {
         int error = errno;
-	std::cout << std::flush;
-	std::cout << "WARNING: failed to set file mode on " << outputdir_outfile << '\n';
-	errno = error;
-	perror("chmod");
+	std::cout << "WARNING: failed to set file mode on " << outputdir_outfile << std::endl;
+	std::cerr << progname << ": chmod: " << strerror(error) << std::endl;
       }
       struct utimbuf ub;
       ub.actime = inode.atime();
@@ -5107,7 +5135,6 @@ void restore_file(std::string const& outfile)
         if (symlink(symlink_name.str().c_str(), outputdir_outfile.c_str()) == -1)
 	{
 	  int error = errno;
-	  std::cout << std::flush;
 	  std::cout << "WARNING: symlink: " << outputdir_outfile << ": " << strerror(error) << '\n';
 	  return;
 	}

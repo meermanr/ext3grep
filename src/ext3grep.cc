@@ -792,10 +792,20 @@ int main(int argc, char* argv[])
   assert(argc == 1);
   device_name = *argv;
   device.open(*argv);
-  assert(device.good());
+  if (!device.good())
+  {
+    int error = errno;
+    std::cerr << progname << ": Failed to read-only open device \"" << *argv << "\": " << strerror(error) << std::endl;
+    exit(EXIT_FAILURE);
+  }
 #if USE_MMAP
   device_fd = open(*argv, O_RDONLY);
-  assert(device_fd != -1);
+  if (device_fd -= -1)
+  {
+    int error = errno;
+    std::cerr << progname << ": Failed to open device \"" << *argv << "\" for reading: " << strerror(error) << std::endl;
+    exit(EXIT_FAILURE);
+  }
 #endif
 
   // Read the first superblock.

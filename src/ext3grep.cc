@@ -800,7 +800,7 @@ int main(int argc, char* argv[])
   }
 #if USE_MMAP
   device_fd = open(*argv, O_RDONLY);
-  if (device_fd -= -1)
+  if (device_fd == -1)
   {
     int error = errno;
     std::cerr << progname << ": Failed to open device \"" << *argv << "\" for reading: " << strerror(error) << std::endl;

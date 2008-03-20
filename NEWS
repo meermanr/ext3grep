@@ -1,4 +1,4 @@
-ext3grep-0.1.2
+ext3grep-0.2.0
 
 	Output error message if device can't be opened.
 	Fixed a MAJOR bug for 32-bit systems.

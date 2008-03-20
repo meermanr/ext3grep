@@ -1,6 +1,7 @@
 ext3grep-0.1.2
 
 	Output error message if device can't be opened.
+	Fixed a MAJOR bug for 32-bit systems.
 
 ext3grep-0.1.1
 

@@ -360,6 +360,7 @@ void init_journal_consts(void)
 unsigned char* get_block(int block, unsigned char* block_buf)
 {
   device.seekg(block_to_offset(block));
+  assert(device.good());
   device.read((char*)block_buf, block_size_);
   assert(device.good());
   return block_buf;
@@ -747,6 +748,7 @@ void load_inodes(int group)
   // Load all inodes into memory.
   all_inodes[group] = new Inode[inodes_per_group_];	// sizeof(Inode) == inode_size_
   device.seekg(block_to_offset(block_number));
+  assert(device.good());
   device.read(reinterpret_cast<char*>(all_inodes[group]), inodes_per_group_ * inode_size_);
   assert(device.good());
 #ifdef DEBUG
@@ -762,14 +764,19 @@ void load_meta_data(int group)
 {
   if (block_bitmap[group])	// Already loaded?
     return;
+  DoutEntering(dc::notice, "load_meta_data(" << group << ")");
   // Load block bitmap.
   block_bitmap[group] = new uint64_t[block_size_ / sizeof(uint64_t)];
   device.seekg(block_to_offset(group_descriptor_table[group].bg_block_bitmap));
+  assert(device.good());
   device.read(reinterpret_cast<char*>(block_bitmap[group]), block_size_);
+  assert(device.good());
   // Load inode bitmap.
   inode_bitmap[group] = new uint64_t[block_size_ / sizeof(uint64_t)];
   device.seekg(block_to_offset(group_descriptor_table[group].bg_inode_bitmap));
+  assert(device.good());
   device.read(reinterpret_cast<char*>(inode_bitmap[group]), block_size_);
+  assert(device.good());
   // Load all inodes into memory.
   load_inodes(group);
 }
@@ -994,7 +1001,9 @@ int main(int argc, char* argv[])
       }
       unsigned char* block = new unsigned char[block_size_];    
       device.seekg(block_to_offset(commandline_block));
+      assert(device.good());
       device.read(reinterpret_cast<char*>(block), block_size_);
+      assert(device.good());
       if (commandline_print)
       {
 	std::cout << "Hex dump of block " << commandline_block << ":\n";
@@ -3303,6 +3312,14 @@ static void init_journal(void)
     DescriptorTag* tag = static_cast<DescriptorTag*>(*iter);
     // Only process those that contain inodes.
     uint32_t block_nr = tag->block();
+    if (!is_block_number(block_nr))
+    {
+      std::cout << block_nr << " is not a block number.\n";
+      std::cout << "Sequence number: " << tag->sequence() << "; ";
+      tag->print_blocks();
+      std::cout << '\n';
+      exit(EXIT_FAILURE);
+    }
     if (is_inode(block_nr))
     {
       int inode_number = block_to_inode(block_nr);
@@ -3453,7 +3470,7 @@ static void iterate_over_journal(
 	      return;
 	    flags = be2le(ptr->t_flags);
 	    if (!(flags & JFS_FLAG_SAME_UUID))
-	      ptr += 16 / sizeof(journal_block_tag_t*);
+	      ptr = reinterpret_cast<journal_block_tag_t*>((char*)ptr + 16);
 	    ++ptr;
 	  }
 	  while(!(flags & JFS_FLAG_LAST_TAG));

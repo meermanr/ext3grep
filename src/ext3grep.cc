@@ -283,6 +283,7 @@ long page_size_;
 int device_fd;
 #endif
 static std::string const outputdir = "RESTORED_FILES/";
+bool feature_incompat_filetype = false;
 
 //-----------------------------------------------------------------------------
 //
@@ -478,11 +479,11 @@ is_directory_type is_directory(unsigned char* block, int blocknr, bool start_blo
     is_start = (dir_entry->name_len == 1 &&
                 dir_entry->name[0] == '.' &&
 		dir_entry->rec_len == EXT3_DIR_REC_LEN(1) &&
-		dir_entry->file_type == EXT3_FT_DIR &&
+		(!feature_incompat_filetype || dir_entry->file_type == EXT3_FT_DIR) &&
 		parent_dir_entry->name_len == 2 &&
 		parent_dir_entry->name[0] == '.' &&
 		parent_dir_entry->name[1] == '.' &&
-		parent_dir_entry->file_type == EXT3_FT_DIR);
+		(!feature_incompat_filetype || parent_dir_entry->file_type == EXT3_FT_DIR));
   }      
   if (start_block)
   {
@@ -521,7 +522,7 @@ is_directory_type is_directory(unsigned char* block, int blocknr, bool start_blo
     return isdir_no;
   // Add some extra paranoia in the case that the whole block appears to exist of a single direntry (for an extended block).
   if (dir_entry->rec_len == block_size_ &&
-      (dir_entry->file_type == EXT3_FT_UNKNOWN ||
+      ((feature_incompat_filetype && dir_entry->file_type == EXT3_FT_UNKNOWN) ||
        dir_entry->file_type >= EXT3_FT_MAX ||
        dir_entry->name_len == 1 ||
        (dir_entry->name[0] == '_' && dir_entry->name[1] == 'Z')))	// Symbol table entry?
@@ -868,7 +869,9 @@ int main(int argc, char* argv[])
     std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_JOURNAL_DEV is, but it doesn't sound good!\n";
   if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_META_BG))
     std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_META_BG is.\n";
-  assert((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_FILETYPE));	// Not supported at the moment.
+
+  // The features that we support.
+  feature_incompat_filetype = super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_FILETYPE;
 
   // Do we have a journal?
   if (super_block.s_journal_dev == 0)
@@ -2369,6 +2372,7 @@ static void print_inode(Inode& inode)
 
 char const* dir_entry_file_type(int file_type, bool ls)
 {
+  assert(feature_incompat_filetype);
   switch ((file_type & 7))
   {
     case EXT3_FT_UNKNOWN:
@@ -2474,9 +2478,10 @@ bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode& inode
   std::cout << "\ninode: " << dir_entry.inode << '\n';
   std::cout << "Directory entry length: " << dir_entry.rec_len << '\n';
   std::cout << "Name length: " << (int)dir_entry.name_len << '\n';
-  std::cout << "File type: " << dir_entry_file_type(dir_entry.file_type, false);
+  if (feature_incompat_filetype)
+    std::cout << "File type: " << dir_entry_file_type(dir_entry.file_type, false);
   std::cout << "\nFile name: \"" << std::string(dir_entry.name, dir_entry.name_len) << "\"\n";
-  if (!reallocated && !zero_inode && (dir_entry.file_type & 7) == EXT3_FT_SYMLINK)
+  if (!reallocated && !zero_inode && feature_incompat_filetype && (dir_entry.file_type & 7) == EXT3_FT_SYMLINK)
   {
     std::cout << "Symbolic link to: ";
     print_symlink(std::cout, inode);
@@ -2534,7 +2539,7 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
   {
     inode = &get_inode(dir_entry.inode);
     allocated = is_allocated(dir_entry.inode);
-    reallocated = (deleted && allocated) || (deleted && inode->dtime() == 0) || (mode_map[file_type] != (inode->mode() & 0xf000));
+    reallocated = (deleted && allocated) || (deleted && inode->dtime() == 0) || (feature_incompat_filetype && mode_map[file_type] != (inode->mode() & 0xf000));
     deleted = deleted || inode->dtime();
     // Block pointers are erased on ext3 on deletion (that is the whole point of writing this tool!),
     // however - in the case of symlinks, the name of the symlink is (still) in this place.
@@ -2545,11 +2550,11 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
       std::cout << "WARNING: Inode " << dir_entry.inode << " has non-zero dtime (" << inode->dtime() <<
 	  "  " << dtime_str.substr(0, dtime_str.length() - 1) << ") but non-zero block list (" << inode->block()[0] << ").\n";
     }
-    filtered = !(\
+    filtered = !(
 	(!commandline_allocated || allocated) &&
 	(!commandline_unallocated || !allocated) &&
 	(!commandline_deleted || deleted) &&
-	(!commandline_directory || file_type == EXT3_FT_DIR) &&
+	(!commandline_directory || is_directory(*inode)) &&
 	(!reallocated || commandline_reallocated) &&
 	(reallocated || (inode->dtime() == 0 && !commandline_deleted) ||
 	       (commandline_after <= (time_t)inode->dtime() && (!commandline_before || (time_t)inode->dtime() < commandline_before))));
@@ -2561,7 +2566,7 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
     if (action(dir_entry, *inode, deleted, allocated, reallocated, zero_inode, linked, filtered, parent, data))
       return;	// Recursion aborted.
     // Handle recursion.
-    if (parent && file_type == EXT3_FT_DIR && depth < commandline_depth)
+    if (parent && is_directory(*inode) && depth < commandline_depth)
     {
       // Skip "." and ".." when iterating recursively.
       if ((dir_entry.name_len == 1 && dir_entry.name[0] == '.') ||
@@ -2857,7 +2862,10 @@ void DirEntry::print(void) const
     std::cout << std::setfill(' ') << std::setw(4) << index.next << ' ';
   else
     std::cout << " end ";
-  std::cout << dir_entry_file_type(M_file_type, true);
+  if (feature_incompat_filetype)
+    std::cout << dir_entry_file_type(M_file_type, true);
+  else
+    std::cout << '-';
   std::cout << std::setfill(' ') << std::setw(8) << M_inode << "  ";
   std::cout << (zero_inode ? 'Z' : deleted ? reallocated ? 'R' : 'D' : ' ');
   Inode* inode = NULL;
@@ -2880,7 +2888,7 @@ void DirEntry::print(void) const
   else
     std::cout << "  " << FileMode(inode->mode());
   std::cout << "  " << M_name;
-  if (!(reallocated || zero_inode) && M_file_type == EXT3_FT_SYMLINK)
+  if (!(reallocated || zero_inode) && is_symlink(*inode))
   {
     std::cout << " -> ";
     print_symlink(std::cout, *inode);
@@ -2899,10 +2907,11 @@ static void print_directory(unsigned char* block, int blocknr)
   depth = 1;
   if (commandline_ls)
   {
-    std::cout << "          .-- File type in dir_entry (r=regular file, d=directory, l=symlink)\n";
-    std::cout << "          |          .-- D: Deleted ; R: Reallocated\n";
-    std::cout << "Indx Next |  Inode   | Deletion time                        Mode        File name\n";
-    std::cout << "==========+==========+----------------data-from-inode------+-----------+=========\n";
+    if (feature_incompat_filetype)
+      std::cout << "          .-- File type in dir_entry (r=regular file, d=directory, l=symlink)\n";
+    std::cout   << "          |          .-- D: Deleted ; R: Reallocated\n";
+    std::cout   << "Indx Next |  Inode   | Deletion time                        Mode        File name\n";
+    std::cout   << "==========+==========+----------------data-from-inode------+-----------+=========\n";
     std::list<DirectoryBlock> db(1);
     db.begin()->read_block(blocknr, db.begin());
     db.begin()->print();
@@ -4254,8 +4263,8 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
 
 struct extended_directory_action_data_st {
   int blocknr;
-  std::map<int, int> linked;
-  std::map<int, int> unlinked;
+  std::map<uint32_t, int> linked;	// inode to count (number of times a linked dir_entry refers to it).
+  std::map<uint32_t, int> unlinked;	// inode to count (number of times an unlinked dir_entry refers to it).
 };
 
 bool filename_heuristics_action(ext3_dir_entry_2 const& dir_entry, Inode& UNUSED(inode),
@@ -4268,17 +4277,25 @@ bool filename_heuristics_action(ext3_dir_entry_2 const& dir_entry, Inode& UNUSED
   return false;
 }
 
-bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode& UNUSED(inode),
-    bool UNUSED(deleted), bool UNUSED(allocated), bool UNUSED(reallocated), bool zero_inode, bool linked, bool UNUSED(filtered), Parent*, void* ptr)
+bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
+    bool UNUSED(deleted), bool UNUSED(allocated), bool reallocated, bool zero_inode, bool linked, bool UNUSED(filtered), Parent*, void* ptr)
 {
   extended_directory_action_data_st* data = reinterpret_cast<extended_directory_action_data_st*>(ptr);
-  int file_type = (dir_entry.file_type & 7);
-  if (file_type == EXT3_FT_DIR && !zero_inode)
+  bool is_maybe_directory = true;	// Maybe, because if !feature_incompat_filetype then it isn't
+  					// garanteed that the contents of the inode still belong to this entry.
+  if (feature_incompat_filetype)
+    is_maybe_directory = (dir_entry.file_type & 7) == EXT3_FT_DIR;
+  else if (!zero_inode && !reallocated)
+    is_maybe_directory = is_directory(inode);  
+  if (is_maybe_directory && !zero_inode)
   {
     int blocknr2 = dir_inode_to_block(dir_entry.inode);
     if (blocknr2 == -1)
     {
-      std::cout << "Cannot find a directory block for inode " << dir_entry.inode << ".\n";
+      // Don't print this message if !feature_incompat_filetype && reallocated
+      // because it more likely to just not being a directory inode.
+      if (feature_incompat_filetype || !reallocated)
+	std::cout << "Cannot find a directory block for inode " << dir_entry.inode << ".\n";
       return true;
     }
     static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
@@ -4288,8 +4305,8 @@ bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode& UNUSED(
     dir_entry2 = reinterpret_cast<ext3_dir_entry_2 const*>(block_buf + dir_entry2->rec_len);
     assert(dir_entry2->name_len == 2 && dir_entry2->name[0] == '.' && dir_entry2->name[1] == '.');
     assert(dir_entry2->inode);
-    std::map<int, int>& inode_to_count(linked ? data->linked : data->unlinked);
-    std::map<int, int>::iterator iter = inode_to_count.find(dir_entry2->inode);
+    std::map<uint32_t, int>& inode_to_count(linked ? data->linked : data->unlinked);
+    std::map<uint32_t, int>::iterator iter = inode_to_count.find(dir_entry2->inode);
     if (iter == inode_to_count.end())
       inode_to_count[dir_entry2->inode] = 1;
     else
@@ -4372,7 +4389,7 @@ void init_directories(void)
     {
       int blocknr = *iter;
       block_to_dir_inode_map_type::iterator iter = block_to_dir_inode_map.find(blocknr);
-      int inode_from_journal = (iter == block_to_dir_inode_map.end()) ? -1 : iter->second;
+      uint32_t inode_from_journal = (iter == block_to_dir_inode_map.end()) ? 0 : iter->second;
       get_block(blocknr, block_buf);
       extended_directory_action_data_st data;
       data.blocknr = blocknr;
@@ -4380,17 +4397,57 @@ void init_directories(void)
       iterate_over_directory(block_buf, blocknr, extended_directory_action, NULL, &data);
       --no_filtering;
       bool linked = (data.linked.size() > 0);
-      std::map<int, int>& inode_to_count(linked ? data.linked : data.unlinked);
+      std::map<uint32_t, int>& inode_to_count(linked ? data.linked : data.unlinked);
+      uint32_t inode_number = 0;
       if (inode_to_count.size() > 0)
       {
-	assert(inode_to_count.size() == 1);
-	std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_to_count.begin()->first <<
-	    " (from " << inode_to_count.begin()->second << ' ' << (linked ? "linked" : "unlinked") << " directories).\n";
-	if (inode_from_journal != -1 && inode_from_journal != inode_to_count.begin()->first)
-	  std::cout << "WARNING: according to the journal it should have been inode " << inode_from_journal << "!?\n";
-        link_extended_directory_block_to_inode(block_buf, blocknr, inode_to_count.begin()->first);
+        if (inode_to_count.size() > 1)
+	{
+	  if (inode_from_journal)
+	    std::cout << "Extended directory at " << blocknr << " has entries that appear to be directories, but their parent directory inode is not consistent.\n";
+	  else
+	  {
+	    std::cout << "WARNING: extended directory at " << blocknr << " has entries that appear to be directories, "
+	        "but their parent directory inode is not consistent! I can't make this decision for you. "
+		"You will have to manually pick an inode for this block number. The inodes that I found are (although ALL could be wrong):\n";
+	    for (std::map<uint32_t, int>::iterator iter = inode_to_count.begin(); iter != inode_to_count.end(); ++iter)
+	    {
+	      std::cout << "  " << iter->first << " (" << iter->second;
+	      if (iter->second == 1)
+		std::cout << " time)\n";
+	      else
+	        std::cout << " times)\n";
+	    }
+	  }
+	}
+	else
+	{
+	  inode_number = inode_to_count.begin()->first;
+	  bool journal_disagrees_with_found_directory_inodes = inode_from_journal && inode_from_journal != inode_number;
+	  if (journal_disagrees_with_found_directory_inodes)
+	  {
+	    std::cout << "Extended directory at " << blocknr << " appears to contains " << inode_to_count.begin()->second <<
+		' ' << (linked ? "linked" : "unlinked") << " directory whose parent directory has inode " <<
+		inode_number << " but according to the journal it should be " << inode_from_journal << ". Using the latter.\n";
+	    // We trust our journal based algorithm more because the content of
+	    // inodes can hardly be trusted: they can be reused and not refer
+	    // to this dir entry at all. Especially in the case of !feature_incompat_filetype
+	    // where even regular files' inodes can have been reused (by directories)
+	    // this will happen frequently, but independent of the frequency at which
+	    // it occurs, the journal is simply more reliable.
+	    inode_number = inode_from_journal;
+	    // However...
+	    if (linked)
+	      std::cout << "WARNING: We really only expect that to happen for unlinked directory entries. Have a look at block " << blocknr << '\n';
+	    if (inode_to_count.begin()->second > 1)
+	      std::cout << "WARNING: It's suspiciously weird that there are more than one such \"directories\". Have a look at block " << blocknr << '\n';
+	  }
+	  else
+	    std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_number <<
+		" (from " << inode_to_count.begin()->second << ' ' << (linked ? "linked" : "unlinked") << " directories).\n";
+	}
       }
-      else
+      if (!inode_number)	// Not found yet?
       {
 	// Do some heuristics on the filenames.
 	std::set<std::string> filenames;
@@ -4399,10 +4456,10 @@ void init_directories(void)
 	--no_filtering;
 	if (filenames.empty())
 	{
-	  if (inode_from_journal != -1)
+	  if (inode_from_journal)
 	  {
-	    std::cout << "Extended directory at " << blocknr << " belongs to inode " << iter->second << " (empty; from journal)).\n";
-	    link_extended_directory_block_to_inode(block_buf, blocknr, inode_from_journal);
+	    std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (empty; from journal)).\n";
+	    inode_number = inode_from_journal;
 	  }
 	  else
 	    std::cout << "Could not find an inode for empty extended directory at " << blocknr << '\n';
@@ -4412,10 +4469,10 @@ void init_directories(void)
 	  std::string dir = parent_directory(blocknr, filenames); 
 	  if (dir.empty())
 	  {
-	    if (inode_from_journal != -1)
+	    if (inode_from_journal)
 	    {
 	      std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (from journal).\n";
-	      link_extended_directory_block_to_inode(block_buf, blocknr, inode_from_journal);
+	      inode_number = inode_from_journal;
 	    }
             else
 	      std::cout << "Could not find an inode for extended directory at " << blocknr << ", disregarding it's contents.\n";
@@ -4428,22 +4485,24 @@ void init_directories(void)
 	      // FIXME: should be processed again after adding extended directory blocks to all_directories!
 	      std::cout << "Extended directory at " << blocknr << " belongs to directory " << dir << " but that directory doesn't exist!\n";
 	      // Fall back to journal.
-	      if (inode_from_journal != -1)
+	      if (inode_from_journal)
 	      {
 		std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (fall back to journal).\n";
-		link_extended_directory_block_to_inode(block_buf, blocknr, inode_from_journal);
+		inode_number = inode_from_journal;
 	      }
 	    }
 	    else
 	    {
-	      std::cout << "Extended directory at " << blocknr << " belongs to inode " << directory_iter->second.inode_number() << '\n';
-	      if (inode_from_journal != -1 && (uint32_t)inode_from_journal != directory_iter->second.inode_number())
+	      inode_number = directory_iter->second.inode_number();
+	      std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_number << '\n';
+	      if (inode_from_journal && inode_from_journal != inode_number)
 	        std::cout << "WARNING: according to the journal it should have been inode " << inode_from_journal << "!?\n";
-	      link_extended_directory_block_to_inode(block_buf, blocknr, directory_iter->second.inode_number());
 	    }
 	  }
 	}
       }
+      if (inode_number)
+        link_extended_directory_block_to_inode(block_buf, blocknr, inode_number);
     }
 
     delete [] block_buf;
@@ -4561,10 +4620,11 @@ static void print_directory_inode(int inode)
 	directory_block_iter != directory.blocks().end(); ++directory_block_iter)
     {
       std::cout << "Directory block " << directory_block_iter->block() << ":\n";
-      std::cout << "          .-- File type in dir_entry (r=regular file, d=directory, l=symlink)\n";
-      std::cout << "          |          .-- D: Deleted ; R: Reallocated\n";
-      std::cout << "Indx Next |  Inode   | Deletion time                        Mode        File name\n";
-      std::cout << "==========+==========+----------------data-from-inode------+-----------+=========\n";
+      if (feature_incompat_filetype)
+	std::cout << "          .-- File type in dir_entry (r=regular file, d=directory, l=symlink)\n";
+      std::cout   << "          |          .-- D: Deleted ; R: Reallocated\n";
+      std::cout   << "Indx Next |  Inode   | Deletion time                        Mode        File name\n";
+      std::cout   << "==========+==========+----------------data-from-inode------+-----------+=========\n";
       directory_block_iter->print();  
     }
   }
@@ -4613,7 +4673,15 @@ void init_files(void)
   bool show_inode_dirblock_table = !commandline_inode_dirblock_table.empty();
   all_directories_type::iterator show_inode_dirblock_table_iter;
   if (show_inode_dirblock_table)
+  {
     show_inode_dirblock_table_iter = all_directories.find(commandline_inode_dirblock_table);
+    if (show_inode_dirblock_table_iter == all_directories.end())
+    {
+      std::cout << std::flush;
+      std::cerr << progname << ": --inode-dirblock-table: No such directory: " << commandline_inode_dirblock_table << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
 
   // Run over all directories.
   for (all_directories_type::iterator directory_iter = all_directories.begin(); directory_iter != all_directories.end(); ++directory_iter)

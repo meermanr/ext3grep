@@ -1494,9 +1494,40 @@ std::ostream& operator<<(std::ostream& os, ext3_super_block const& super_block)
   // os << "First non-reserved inode: " << super_block.s_first_ino << '\n';
   os << "Size of inode structure: " << super_block.s_inode_size << '\n';
   os << "Block group # of this superblock: " << super_block.s_block_group_nr << '\n';
-  // os << "compatible feature set: " << super_block.s_feature_compat << '\n';
-  // os << "incompatible feature set: " << super_block.s_feature_incompat << '\n';
-  // os << "readonly-compatible feature set: " << super_block.s_feature_ro_compat << '\n';
+  os << "compatible feature set:";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_DIR_PREALLOC))
+    os << " DIR_PREALLOC";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_IMAGIC_INODES))
+    os << " IMAGIC_INODES";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_HAS_JOURNAL))
+    os << " HAS_JOURNAL";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_EXT_ATTR))
+    os << " EXT_ATTR";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_RESIZE_INODE))
+    os << " RESIZE_INODE";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_DIR_INDEX))
+    os << " DIR_INDEX";
+  os << '\n';
+  os << "incompatible feature set:";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_COMPRESSION))
+    os << " COMPRESSION";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_FILETYPE))
+    os << " FILETYPE";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_RECOVER))
+    os << " RECOVER";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_JOURNAL_DEV))
+    os << " JOURNAL_DEV";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_META_BG))
+    os << " META_BG";
+  os << '\n';
+  os << "readonly-compatible feature set:";
+  if ((super_block.s_feature_ro_compat & EXT3_FEATURE_RO_COMPAT_SPARSE_SUPER))
+    os << " SPARSE_SUPER";
+  if ((super_block.s_feature_ro_compat & EXT3_FEATURE_RO_COMPAT_LARGE_FILE))
+    os << " LARGE_FILE";
+  if ((super_block.s_feature_ro_compat & EXT3_FEATURE_RO_COMPAT_BTREE_DIR))
+    os << " BTREE_DIR";
+  os << '\n';
   // os << "128-bit uuid for volume: " << super_block.s_uuid << '\n';
   // os << "For compression: " << super_block.s_algorithm_usage_bitmap << '\n';
   // os << "Nr to preallocate for dirs: " << super_block.s_prealloc_dir_blocks << '\n';

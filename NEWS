@@ -1,3 +1,8 @@
+ext3grep-?
+
+        Accept weird characters in filenames more often. Warn in most cases when a filename is rejected
+	because of it's characters.
+
 ext3grep-0.3.0
 
 	Added support for filesystems without the incompatibility feature EXT3_FEATURE_INCOMPAT_FILETYPE.

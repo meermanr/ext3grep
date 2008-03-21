@@ -213,7 +213,8 @@ static void iterate_over_journal(
 static void print_directory(unsigned char* block, int blocknr);
 static void print_restrictions(void);
 static bool is_directory(Inode& inode);
-static is_directory_type is_directory(unsigned char* block, int blocknr, bool start_block = true, bool certainly_linked = true, int offset = 0);
+static is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of_entries,
+    bool start_block = true, bool certainly_linked = true, int offset = 0);
 static bool is_journal(int blocknr);
 static bool is_in_journal(int blocknr);
 static int is_inode_block(int blocknr);
@@ -375,16 +376,17 @@ unsigned char* get_block(int block, unsigned char* block_buf)
 enum filename_char_type {
   fnct_ok,
   fnct_illegal,
-  fnct_unlikely
+  fnct_unlikely,
+  fnct_unprintable
 };
 
-inline filename_char_type is_filename_char(unsigned char c)
+inline filename_char_type is_filename_char(__s8 c)
 {
-  if (c < 32 || c > 126 || c == '/')
+  if (c == 0 || c == '/')
     return fnct_illegal;
-#if 0
-  // These characters are legal... but very unlikely.
-  static unsigned char hit[128 - 32] = {			// Mark 22, 2a, 3b, 3c, 3e, 3f, 5c, 60, 7c
+  // These characters are legal... but unlikely
+  // (* They did not appear in any of the files on MY partition).
+  static unsigned char hit[128 - 32] = {			// Mark 22 ("), 2a (*), 3b (;), 3c (<), 3e (>), 3f (?), 5c (\), 60 (`), 7c (|)
 //  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
     0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, // 2
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, // 3
@@ -395,9 +397,11 @@ inline filename_char_type is_filename_char(unsigned char c)
   };
   // These characters are legal, but very unlikely.
   // Don't reject them when a specific block was requested.
-  if (commandline_block == -1 && hit[c - 32])
+  if (commandline_block == -1 && !((c > 31 && c != 127) || (unsigned char)c > 159))
+    return fnct_unprintable;
+  // These characters are legal, but unlikely.
+  if (commandline_block == -1 && (c < 32 || c > 126 || hit[c - 32]))
     return fnct_unlikely;
-#endif
   return fnct_ok;
 }
 
@@ -460,8 +464,45 @@ struct DelayedWarning {
   std::ostream& stream(void) { init(); return *delayed_warning; }
 };
 
+// Print string, escaping unprintable characters.
+void print_buf_to(std::ostream& os, char const* buf, int len)
+{
+  for (int i = 0; i < len; ++i)
+  {
+    __s8 c = buf[i];
+    if ((c > 31 && c != 92 && c != 127) || (unsigned char)c > 159)
+      os.put(c);
+    else
+    {
+      static char const c2s_tab[7] = { 'a', 'b', 't', 'n', 'v', 'f', 'r' };
+      os.put('\\');
+      if (c > 6 && c < 14)
+      {
+	os.put(c2s_tab[c - 7]);
+	return;
+      }
+      else if (c == '\e')
+      {
+	os.put('e');
+	return;
+      }
+      else if (c == '\\')
+      {
+	os.put('\\');
+	return;
+      }
+      short old_fill = os.fill('0');
+      std::ios_base::fmtflags old_flgs = os.flags();
+      os.width(3);
+      os << std::oct << (int)((unsigned char)c);
+      os.setf(old_flgs);
+      os.fill(old_fill);
+    }
+  }
+}
+
 // Return true if this block looks like it contains a directory.
-is_directory_type is_directory(unsigned char* block, int blocknr, bool start_block, bool certainly_linked, int offset)
+is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of_entries, bool start_block, bool certainly_linked, int offset)
 {
   assert(!start_block || offset == 0);
   // Must be aligned to 4 bytes.
@@ -500,15 +541,27 @@ is_directory_type is_directory(unsigned char* block, int blocknr, bool start_blo
   if (dir_entry->inode == 0 && dir_entry->name_len > 0)
   {
     // If the inode is zero and the filename makes no sense, reject the directory.
+    bool unprintable = false;
     for (int c = 0; c < dir_entry->name_len; ++c)
-      if (is_filename_char(dir_entry->name[c]) == fnct_illegal)
+    {
+      filename_char_type result = is_filename_char(dir_entry->name[c]);
+      if (result == fnct_illegal)
 	return isdir_no;
+      if (result == fnct_unprintable)
+	unprintable = true;
+    }
     // If the inode is zero, but the filename makes sense, print a warning
     // only when the inode really wasn't expected to be zero. Do not reject
     // the directory though.
     if (certainly_linked && (offset != 0 || start_block))
-      delayed_warning.stream() << "WARNING: zero inode (name: \"" << std::string(dir_entry->name, dir_entry->name_len) <<
-	  "\"; block: " << blocknr << "; offset 0x" << std::hex << offset << std::dec << ")\n";
+    {
+      delayed_warning.stream() << "WARNING: zero inode (name: ";
+      if (unprintable)
+        delayed_warning.stream() << "*contains unprintable characters* ";
+      delayed_warning.stream() << "\"";
+      print_buf_to(delayed_warning.stream(), dir_entry->name, dir_entry->name_len);
+      delayed_warning.stream() << "\"; block: " << blocknr << "; offset 0x" << std::hex << offset << std::dec << ")\n";
+    }
   }
   if (dir_entry->inode > inode_count_)
     return isdir_no;	// Inode out of range.
@@ -529,40 +582,71 @@ is_directory_type is_directory(unsigned char* block, int blocknr, bool start_blo
     return isdir_no;
   // The record length must point to the end of the block or chain to it.
   offset += dir_entry->rec_len;
-  if (offset != block_size_ && is_directory(block, blocknr, false, certainly_linked, offset) == isdir_no)
+  int previous_number_of_entries = number_of_entries;
+  if (offset != block_size_ && is_directory(block, blocknr, number_of_entries, false, certainly_linked, offset) == isdir_no)
     return isdir_no;
   // The file name may only exist of certain characters.
   bool illegal = false;
   bool ok = true;
+  int number_of_weird_characters = 0;
   for (int c = 0; c < dir_entry->name_len; ++c)
     if (is_filename_char(dir_entry->name[c]) != fnct_ok)
     {
       // Google Earth contains a few files that end on '&nbsp;'. Accept ';' in that case.
       if (dir_entry->name_len - c == 1 && dir_entry->name_len > 6 && strncmp(&dir_entry->name[c - 5], "&nbsp;", 6) == 0)
         continue;
-      ok = false;
+      ++number_of_weird_characters;
       if (is_filename_char(dir_entry->name[c]) == fnct_illegal)
       {
+        ok = false;
         illegal = true;
 	break;
       }
     }
+  // Setting ok to false means we reject this entry. Also setting illegal will reject it silently.
+  // The larger the number of previous entries, the larger the chance that this is really a good dir entry.
+  // Therefore, accept weird characters to a certain extend.
+  if (number_of_weird_characters > previous_number_of_entries && number_of_weird_characters < dir_entry->name_len / 2)
+    ok = false;
+  // If a filenames exists of exclusively weird characters (most notably filenames of length 1), don't believe this can be a real entry.
+  if (number_of_weird_characters == dir_entry->name_len)
+  {
+    if (dir_entry->name_len > 1)
+    {
+      // But you never know, so let the user know about it.
+      std::cout << "Note: Rejecting '";
+      print_buf_to(std::cout, dir_entry->name, dir_entry->name_len);
+      std::cout << "' as possibly legal filename.\n";
+    }
+    illegal = true;
+  }
   if (ok && delayed_warning)
   {
     std::cout << std::flush;
     std::cerr << delayed_warning.str();
     std::cerr << std::flush;
   }
-  if (!ok && !illegal && accepted_filenames.find(std::string(dir_entry->name, dir_entry->name_len)) == accepted_filenames.end())
+  if (!ok && !illegal)
   {
-    std::cout << std::flush;
-    std::cerr << "\nWARNING: Rejecting possible directory (block #" << blocknr << ") because an entry contains legal but unlikely characters: '";
-    std::cerr.write(dir_entry->name, dir_entry->name_len);
-    std::cerr << "'.\n";
-    std::cerr << "If this looks like a filename to you, you must add --accept='";
-    std::cerr.write(dir_entry->name, dir_entry->name_len);
-    std::cerr << "' as commandline parameter!" << std::endl;
+    std::ostringstream escaped_name;
+    print_buf_to(escaped_name, dir_entry->name, dir_entry->name_len);
+    if (accepted_filenames.find(escaped_name.str()) == accepted_filenames.end())
+    {
+      std::cout << std::flush;
+      if (certainly_linked)
+	std::cerr << "\nWARNING: Rejecting possible directory (block " << blocknr << ") because an entry contains legal but unlikely characters: '";
+      else // Aparently we're looking for deleted entries.
+	std::cerr << "\nWARNING: Rejecting a dir_entry (block " << blocknr << ") because it contains legal but unlikely characters: '";
+      std::cerr << escaped_name.str() << "'.\n";
+      std::cerr << "Use --ls --block " << blocknr << " to examine this possible directory block.\n";
+      std::cerr << "If it looks like a directory to you, and '" << escaped_name.str() << "' looks like a filename that might belong "
+          "in that directory, then add --accept='" << escaped_name.str() << "' as commandline parameter." << std::endl;
+    }
+    else
+      ok = true;
   }
+  if (ok)
+    ++number_of_entries;
   return ok ? (is_start ? isdir_start : isdir_extended) : isdir_no;
 }
 
@@ -1050,7 +1134,8 @@ int main(int argc, char* argv[])
       unsigned int bit = commandline_block - first_data_block(super_block) - commandline_group * blocks_per_group(super_block);
       assert(bit < 8U * block_size_);
       struct bitmap_ptr bmp = get_bitmap_mask(bit);
-      is_directory_type isdir = is_directory(block, commandline_block, false);
+      int number_of_entries = 0;
+      is_directory_type isdir = is_directory(block, commandline_block, number_of_entries, false);
       if (block_bitmap[commandline_group] == NULL)
 	load_meta_data(commandline_group);
       bool allocated = (block_bitmap[commandline_group][bmp.index] & bmp.mask);
@@ -1148,7 +1233,8 @@ int main(int argc, char* argv[])
       }
       else
       {
-	std::cout << "\nBlock " << commandline_block << " is a directory. The block is " << (allocated ? journal ? "a Journal block" : "Allocated" : "Unallocated") << "\n\n";
+	std::cout << "\nBlock " << commandline_block << " is a directory with " << number_of_entries <<
+	    " entries. The block is " << (allocated ? journal ? "a Journal block" : "Allocated" : "Unallocated") << "\n\n";
 	if (commandline_ls)
 	  print_restrictions();
 	if (isdir == isdir_start)
@@ -2682,7 +2768,8 @@ static void iterate_over_directory(unsigned char* block, int blocknr,
     dir_entry = reinterpret_cast<ext3_dir_entry_2 const*>(block + offset);
     if (!map[offset / EXT3_DIR_PAD])
     {
-      if (is_directory(block, blocknr, false, false, offset))
+      int number_of_entries = 0;
+      if (is_directory(block, blocknr, number_of_entries, false, false, offset))
         filter_dir_entry(*dir_entry, true, false, action, parent, data);
     }
     offset -= EXT3_DIR_PAD;
@@ -3827,7 +3914,8 @@ void init_dir_inode_to_block_cache(void)
 	  continue;
 #endif
 	unsigned char* block_ptr = get_block(block, block_buf);
-	is_directory_type result = is_directory(block_ptr, block, false);
+	int number_of_entries = 0;
+	is_directory_type result = is_directory(block_ptr, block, number_of_entries, false);
 	if (result == isdir_start)
 	{
 	  ext3_dir_entry_2* dir_entry = reinterpret_cast<ext3_dir_entry_2*>(block_ptr);

@@ -5,7 +5,7 @@ dnl CW_VERSION_MINOR               : Increment when major changes have occured.
 dnl CW_VERSION_REVISION            : Increment every public release; or set to 0 when CW_VERSION_MINOR was incremented.
 
 define(CW_VERSION_MAJOR, 0)
-define(CW_VERSION_MINOR, 2)
+define(CW_VERSION_MINOR, 3)
 define(CW_VERSION_REVISION, 0)
 
 define(CW_PACKAGE_NAME, [ext3grep])

@@ -1,3 +1,10 @@
+ext3grep-0.3.0
+
+	Added support for filesystems without the incompatibility feature EXT3_FEATURE_INCOMPAT_FILETYPE.
+	Removed assertion `inode_to_count.size() == 1'. The new algorithm uses
+	  the inode found in the journal in this case now (code that I added to 0.1.0).
+	Improved some error messages.
+
 ext3grep-0.2.0
 
 	Output error message if device can't be opened.

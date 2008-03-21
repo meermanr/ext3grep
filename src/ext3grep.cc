@@ -849,6 +849,23 @@ int main(int argc, char* argv[])
   assert((block_size_ / inode_size_) * inode_size_ == block_size_);
   // Space needed for the inode table should match the returned value of the number of blocks they need.
   assert((inodes_per_group_ * inode_size_ - 1) / block_size_ + 1 == inode_blocks_per_group(super_block));
+  // File system must have a journal.
+  assert((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_HAS_JOURNAL));
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_DIR_PREALLOC))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_DIR_PREALLOC is.\n";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_IMAGIC_INODES))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_IMAGIC_INODES is (sounds scary).\n";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_EXT_ATTR))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_EXT_ATTR is.\n";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_COMPRESSION))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_COMPRESSION is (Houston, we have problem).\n";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_RECOVER))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_RECOVER is.\n";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_JOURNAL_DEV))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_JOURNAL_DEV is, but it doesn't sound good!\n";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_META_BG))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_META_BG is.\n";
+  assert((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_FILETYPE));	// Not supported at the moment.
 
   // Do we have a journal?
   if (super_block.s_journal_dev == 0)

@@ -860,7 +860,10 @@ int main(int argc, char* argv[])
   if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_COMPRESSION))
     std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_COMPRESSION is (Houston, we have problem).\n";
   if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_RECOVER))
-    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_RECOVER is.\n";
+  {
+    std::cout << "WARNING: EXT3_FEATURE_INCOMPAT_RECOVER is set. "
+        "This either means that your partition is still mounted, and/or the file system is in an unclean state.\n";
+  }
   if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_JOURNAL_DEV))
     std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_JOURNAL_DEV is, but it doesn't sound good!\n";
   if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_META_BG))

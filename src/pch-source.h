@@ -37,6 +37,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <bitset>
 #include "debug.h"
 #ifdef CWDEBUG
 #include <libcwd/buf2str.h>

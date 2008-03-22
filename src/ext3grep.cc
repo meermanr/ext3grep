@@ -44,6 +44,7 @@
 #include <list>
 #include <limits>
 #include <sstream>
+#include <bitset>
 #include "debug.h"
 #endif
 
@@ -236,6 +237,7 @@ static void init_files(void);
 static void show_journal_inodes(int inode);
 static void restore_file(std::string const& outfile);
 static void show_hardlinks(void);
+static void init_accept(void);
 
 // Frequently used constant values from the superblock.
 ext3_super_block super_block;
@@ -275,7 +277,6 @@ void** all_mmaps;
 #endif
 ext3_group_desc* group_descriptor_table;
 char* inodes_buf;
-std::set<std::string> accepted_filenames;
 int no_filtering = 0;
 std::string device_name;
 uint32_t wrapped_journal_sequence = 0;
@@ -304,6 +305,9 @@ void init_consts()
 #if USE_MMAP
   page_size_ = sysconf(_SC_PAGESIZE);
 #endif
+
+  // Initialize accept bitmasks.
+  init_accept();
 
   // Global arrays.
   all_inodes = new Inode* [groups_];
@@ -370,7 +374,7 @@ unsigned char* get_block(int block, unsigned char* block_buf)
 
 //-----------------------------------------------------------------------------
 //
-// Block type detection: is_*
+// is_filename_char
 //
 
 enum filename_char_type {
@@ -404,6 +408,75 @@ inline filename_char_type is_filename_char(__s8 c)
     return fnct_unlikely;
   return fnct_ok;
 }
+
+//-----------------------------------------------------------------------------
+//
+// Accepted filenames and unlikely characters.
+//
+
+struct Accept {
+  static std::bitset<256> S_illegal;	// Bit mask reflecting illegal characters.
+  static std::bitset<256> S_unlikely;	// Bit mask reflecting unlikely characters.
+
+private:
+  std::string M_filename;	// The filename.
+  std::bitset<256> M_mask;	// Bit mask reflecting unlikely characters.
+  bool M_accept;		// True if this filename should be accepted.
+
+public:
+  Accept(std::string const& filename, bool accept) : M_filename(filename), M_accept(accept)
+  {
+    M_mask.reset();
+    for (std::string::const_iterator iter = M_filename.begin(); iter != M_filename.end(); ++iter)
+    {
+      __u8 c = *iter;
+      assert(!S_illegal[c]);
+      if (S_unlikely[c])
+        M_mask.set(c);
+    }
+  }
+
+  std::string const& filename(void) const { return M_filename; }
+  bool accepted(void) const { return M_accept; }
+
+  friend bool operator<(Accept const& a1, Accept const& a2) { return a1.M_filename < a2.M_filename; }
+};
+
+std::bitset<256> Accept::S_illegal;
+std::bitset<256> Accept::S_unlikely;
+
+// Set with all Accept objects.
+std::set<Accept> accepted_filenames;
+
+// Global initialization.
+void init_accept(void)
+{
+  Accept::S_illegal.reset();
+  Accept::S_unlikely.reset();
+
+  for (int i = 0; i < 256; ++i)
+  {
+    __s8 c = i;
+    filename_char_type res = is_filename_char(c);
+    switch(res)
+    {
+      case fnct_ok:
+        break;
+      case fnct_illegal:
+        Accept::S_illegal.set(i);
+        break;
+      case fnct_unlikely:
+      case fnct_unprintable:
+        Accept::S_unlikely.set(i);
+        break;
+    }
+  }
+}
+
+//-----------------------------------------------------------------------------
+//
+// Block type detection: is_*
+//
 
 static bool is_inode(int block)
 {
@@ -630,20 +703,24 @@ is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of
   {
     std::ostringstream escaped_name;
     print_buf_to(escaped_name, dir_entry->name, dir_entry->name_len);
-    if (accepted_filenames.find(escaped_name.str()) == accepted_filenames.end())
+    Accept const accept(escaped_name.str(), false);
+    std::set<Accept>::iterator accept_iter = accepted_filenames.find(accept);
+    if (accept_iter != accepted_filenames.end())
+      ok = accept_iter->accepted();
+    else
     {
+      // Add this entry to avoid us printing this again.
+      accepted_filenames.insert(accept);
       std::cout << std::flush;
       if (certainly_linked)
-	std::cerr << "\nWARNING: Rejecting possible directory (block " << blocknr << ") because an entry contains legal but unlikely characters: '";
+	std::cerr << "\nWARNING: Rejecting possible directory (block " << blocknr << ") because an entry contains legal but unlikely characters.\n'";
       else // Aparently we're looking for deleted entries.
-	std::cerr << "\nWARNING: Rejecting a dir_entry (block " << blocknr << ") because it contains legal but unlikely characters: '";
-      std::cerr << escaped_name.str() << "'.\n";
-      std::cerr << "Use --ls --block " << blocknr << " to examine this possible directory block.\n";
-      std::cerr << "If it looks like a directory to you, and '" << escaped_name.str() << "' looks like a filename that might belong "
-          "in that directory, then add --accept='" << escaped_name.str() << "' as commandline parameter." << std::endl;
+	std::cerr << "\nWARNING: Rejecting a dir_entry (block " << blocknr << ") because it contains legal but unlikely characters.\n";
+      std::cerr     << "         Use --ls --block " << blocknr << " to examine this possible directory block.\n";
+      std::cerr     << "         If it looks like a directory to you, and '" << escaped_name.str() << "'\n";
+      std::cerr     << "         looks like a filename that might belong in that directory, then add\n";
+      std::cerr     << "         --accept='" << escaped_name.str() << "' as commandline parameter." << std::endl;
     }
-    else
-      ok = true;
   }
   if (ok)
     ++number_of_entries;
@@ -1261,6 +1338,16 @@ int main(int argc, char* argv[])
 	}
 	else
 	  print_directory(block, commandline_block);
+	// Turn on filtering of unlikely characters again:
+	int blocknr = commandline_block;
+	commandline_block = -1;
+	number_of_entries = 0;
+	isdir = is_directory(block, blocknr, number_of_entries, false);
+	if (isdir == isdir_no)
+	{
+	  std::cout << "WARNING: THIS DIRECTORY AS-IS IS REJECTED DUE TO UNLIKELY CHARACTERS IN ONE OR MORE FILENAMES.\n";
+	  std::cout << "         You must add --accept=... to the command line (see previous WARNING's printed) in order to recover this directory.\n";
+	}
       }
       delete [] block;
     }
@@ -2136,7 +2223,7 @@ static void decode_commandline_options(int& argc, char**& argv)
 	  }
 	  case opt_accept:
 	  {
-	    accepted_filenames.insert(optarg);
+	    accepted_filenames.insert(Accept(optarg, true));
 	    break;
 	  }
         }
@@ -2233,8 +2320,11 @@ static void decode_commandline_options(int& argc, char**& argv)
   if (!accepted_filenames.empty())
   {
     std::cout << "Accepted filenames:";
-    for (std::set<std::string>::iterator iter = accepted_filenames.begin(); iter != accepted_filenames.end(); ++iter)
-      std::cout << " '" << *iter << "'";
+    for (std::set<Accept>::iterator iter = accepted_filenames.begin(); iter != accepted_filenames.end(); ++iter)
+    {
+      assert(iter->accepted());
+      std::cout << " '" << iter->filename() << "'";
+    }
     outputwritten = true;
   }
   if (outputwritten)

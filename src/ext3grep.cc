@@ -198,6 +198,7 @@ bool commandline_restore_all = false;
 bool commandline_show_hardlinks = false;
 
 struct Parent;
+class DirectoryBlockStats;
 
 static void decode_commandline_options(int& argc, char**& argv);
 static void dump_hex(unsigned char const* buf, size_t size);
@@ -214,7 +215,7 @@ static void iterate_over_journal(
 static void print_directory(unsigned char* block, int blocknr);
 static void print_restrictions(void);
 static bool is_directory(Inode& inode);
-static is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of_entries,
+static is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlockStats& stats,
     bool start_block = true, bool certainly_linked = true, int offset = 0);
 static bool is_journal(int blocknr);
 static bool is_in_journal(int blocknr);
@@ -574,8 +575,20 @@ void print_buf_to(std::ostream& os, char const* buf, int len)
   }
 }
 
+class DirectoryBlockStats {
+  private:
+    int M_number_of_entries;			// Number of entries in chain to the end.
+    __u8 M_unlikely_character_count[256];	// Character count of filenames.
+  public:
+    DirectoryBlockStats(void) { std::memset(this, 0, sizeof(DirectoryBlockStats)); }
+
+    int number_of_entries(void) const { return M_number_of_entries; }
+    void increment_number_of_entries(void) { ++M_number_of_entries; }
+    void increment_unlikely_character_count(__u8 c) { ++M_unlikely_character_count[c]; }
+};
+
 // Return true if this block looks like it contains a directory.
-is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of_entries, bool start_block, bool certainly_linked, int offset)
+is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlockStats& stats, bool start_block, bool certainly_linked, int offset)
 {
   assert(!start_block || offset == 0);
   // Must be aligned to 4 bytes.
@@ -655,8 +668,8 @@ is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of
     return isdir_no;
   // The record length must point to the end of the block or chain to it.
   offset += dir_entry->rec_len;
-  int previous_number_of_entries = number_of_entries;
-  if (offset != block_size_ && is_directory(block, blocknr, number_of_entries, false, certainly_linked, offset) == isdir_no)
+  // NOT USED; int previous_number_of_entries = stats.number_of_entries();
+  if (offset != block_size_ && is_directory(block, blocknr, stats, false, certainly_linked, offset) == isdir_no)
     return isdir_no;
   // The file name may only exist of certain characters.
   bool illegal = false;
@@ -665,21 +678,24 @@ is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of
   for (int c = 0; c < dir_entry->name_len; ++c)
     if (is_filename_char(dir_entry->name[c]) != fnct_ok)
     {
-      // Google Earth contains a few files that end on '&nbsp;'. Accept ';' in that case.
-      if (dir_entry->name_len - c == 1 && dir_entry->name_len > 6 && strncmp(&dir_entry->name[c - 5], "&nbsp;", 6) == 0)
-        continue;
-      ++number_of_weird_characters;
       if (is_filename_char(dir_entry->name[c]) == fnct_illegal)
       {
         ok = false;
         illegal = true;
 	break;
       }
+      ++number_of_weird_characters;
+      stats.increment_unlikely_character_count(dir_entry->name[c]);
     }
+#if 1
+  // New code... just accept everything at this point, except filenames of 1 character long that are unlikely.
+  if (dir_entry->name_len == 1 && number_of_weird_characters > 0)
+    ok = false;
+#else
   // Setting ok to false means we reject this entry. Also setting illegal will reject it silently.
   // The larger the number of previous entries, the larger the chance that this is really a good dir entry.
   // Therefore, accept weird characters to a certain extend.
-  if (number_of_weird_characters > previous_number_of_entries && number_of_weird_characters < dir_entry->name_len / 2)
+  if (number_of_weird_characters > previous_number_of_entries || number_of_weird_characters > dir_entry->name_len / 2)
     ok = false;
   // If a filenames exists of exclusively weird characters (most notably filenames of length 1), don't believe this can be a real entry.
   if (!illegal && number_of_weird_characters == dir_entry->name_len)
@@ -692,7 +708,9 @@ is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of
       std::cout << "' as possibly legal filename.\n";
     }
     illegal = true;
+    ok = false;
   }
+#endif
   if (ok && delayed_warning)
   {
     std::cout << std::flush;
@@ -723,7 +741,7 @@ is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of
     }
   }
   if (ok)
-    ++number_of_entries;
+    stats.increment_number_of_entries();
   return ok ? (is_start ? isdir_start : isdir_extended) : isdir_no;
 }
 
@@ -1211,8 +1229,8 @@ int main(int argc, char* argv[])
       unsigned int bit = commandline_block - first_data_block(super_block) - commandline_group * blocks_per_group(super_block);
       assert(bit < 8U * block_size_);
       struct bitmap_ptr bmp = get_bitmap_mask(bit);
-      int number_of_entries = 0;
-      is_directory_type isdir = is_directory(block, commandline_block, number_of_entries, false);
+      DirectoryBlockStats stats;
+      is_directory_type isdir = is_directory(block, commandline_block, stats, false);
       if (block_bitmap[commandline_group] == NULL)
 	load_meta_data(commandline_group);
       bool allocated = (block_bitmap[commandline_group][bmp.index] & bmp.mask);
@@ -1310,8 +1328,8 @@ int main(int argc, char* argv[])
       }
       else
       {
-	std::cout << "\nBlock " << commandline_block << " is a directory with " << number_of_entries <<
-	    " entries. The block is " << (allocated ? journal ? "a Journal block" : "Allocated" : "Unallocated") << "\n\n";
+	std::cout << "\nBlock " << commandline_block << " is a directory. The block is " <<
+	    (allocated ? journal ? "a Journal block" : "Allocated" : "Unallocated") << "\n\n";
 	if (commandline_ls)
 	  print_restrictions();
 	if (isdir == isdir_start)
@@ -1333,21 +1351,16 @@ int main(int argc, char* argv[])
 	  {
 	    // Run over all blocks.
 	    bool reused_or_corrupted_indirect_block1 = iterate_over_all_blocks_of(inode, print_directory_action);
-	    assert(!reused_or_corrupted_indirect_block1);
+	    if (reused_or_corrupted_indirect_block1)
+	    {
+	      std::cout << "Note: Block " << commandline_block << " is a directory start, it's \".\" entry has inode " << dir_entry->inode <<
+		  " which is indeed a directory, but this inode has reused or corrupted (double/triple) indirect blocks so that not all"
+		  " directory blocks could be printed!\n";
+	    }
 	  }
 	}
 	else
 	  print_directory(block, commandline_block);
-	// Turn on filtering of unlikely characters again:
-	int blocknr = commandline_block;
-	commandline_block = -1;
-	number_of_entries = 0;
-	isdir = is_directory(block, blocknr, number_of_entries, false);
-	if (isdir == isdir_no)
-	{
-	  std::cout << "WARNING: THIS DIRECTORY AS-IS IS REJECTED DUE TO UNLIKELY CHARACTERS IN ONE OR MORE FILENAMES.\n";
-	  std::cout << "         You must add --accept=... to the command line (see previous WARNING's printed) in order to recover this directory.\n";
-	}
       }
       delete [] block;
     }
@@ -2858,8 +2871,8 @@ static void iterate_over_directory(unsigned char* block, int blocknr,
     dir_entry = reinterpret_cast<ext3_dir_entry_2 const*>(block + offset);
     if (!map[offset / EXT3_DIR_PAD])
     {
-      int number_of_entries = 0;
-      if (is_directory(block, blocknr, number_of_entries, false, false, offset))
+      DirectoryBlockStats stats;
+      if (is_directory(block, blocknr, stats, false, false, offset))
         filter_dir_entry(*dir_entry, true, false, action, parent, data);
     }
     offset -= EXT3_DIR_PAD;
@@ -4004,8 +4017,8 @@ void init_dir_inode_to_block_cache(void)
 	  continue;
 #endif
 	unsigned char* block_ptr = get_block(block, block_buf);
-	int number_of_entries = 0;
-	is_directory_type result = is_directory(block_ptr, block, number_of_entries, false);
+	DirectoryBlockStats stats;
+	is_directory_type result = is_directory(block_ptr, block, stats, false);
 	if (result == isdir_start)
 	{
 	  ext3_dir_entry_2* dir_entry = reinterpret_cast<ext3_dir_entry_2*>(block_ptr);

@@ -688,7 +688,7 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
       stats.increment_unlikely_character_count(dir_entry->name[c]);
     }
 #if 1
-  // New code... just accept everything at this point, except filenames of 1 character long that are unlikely.
+  // New code... just accept everything at this point, except filenames existing of a single unlikely character.
   if (dir_entry->name_len == 1 && number_of_weird_characters > 0)
     ok = false;
 #else

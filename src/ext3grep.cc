@@ -420,7 +420,7 @@ struct Accept {
 
 private:
   std::string M_filename;	// The filename.
-  std::bitset<256> M_mask;	// Bit mask reflecting unlikely characters.
+  std::bitset<256> M_mask;	// Bit mask reflecting unlikely characters in filename.
   bool M_accept;		// True if this filename should be accepted.
 
 public:
@@ -682,7 +682,7 @@ is_directory_type is_directory(unsigned char* block, int blocknr, int& number_of
   if (number_of_weird_characters > previous_number_of_entries && number_of_weird_characters < dir_entry->name_len / 2)
     ok = false;
   // If a filenames exists of exclusively weird characters (most notably filenames of length 1), don't believe this can be a real entry.
-  if (number_of_weird_characters == dir_entry->name_len)
+  if (!illegal && number_of_weird_characters == dir_entry->name_len)
   {
     if (dir_entry->name_len > 1)
     {

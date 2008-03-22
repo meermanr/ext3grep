@@ -1,7 +1,10 @@
-ext3grep-?
+ext3grep-0.3.1
 
-        Accept weird characters in filenames more often. Warn in most cases when a filename is rejected
-	because of it's characters.
+        Accept weird characters in filenames (almost always).
+	Added code to warn about rejected filenames because of it's characters
+	  (although that is hardly used now we that accept everything).
+	Added code that collects statistics about the number
+	  of weird characters in a directory (not used yet).
 
 ext3grep-0.3.0
 

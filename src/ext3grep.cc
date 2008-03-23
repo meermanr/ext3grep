@@ -971,9 +971,19 @@ void load_meta_data(int group)
 // main
 //
 
+#ifdef USE_SVN
+extern char const* svn_revision;
+#endif
+
 int main(int argc, char* argv[])
 {
   Debug(debug::init());
+
+#ifdef USE_SVN
+  std::cout << "Running " << svn_revision << '\n';
+#else
+  std::cout << "Running ext3grep version " VERSION "\n";
+#endif
 
   decode_commandline_options(argc, argv);
 
@@ -4407,6 +4417,11 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
 
   // And the first block.
   int first_block = dir_inode_to_block(inode_number);
+  if (first_block == -1)
+  {
+    std::cout << std::flush;
+    std::cerr << "ERROR: dir_inode_to_block(" << inode_number << ") returned -1.\n";
+  }
   assert(first_block != -1);
 
   // Store a new entry in the all_directories container.

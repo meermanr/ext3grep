@@ -62,6 +62,12 @@ dnl Each Makefile.am should use DEFS = @DEFS@. Set DEFS here.
 DEFS="-DHAVE_CONFIG_H"
 AC_SUBST(DEFS)
 
+dnl Test if we are checked out by svn.
+if test -d "$srcdir/.svn"; then
+  AC_DEFINE_UNQUOTED([USE_SVN], 1, [Define when this project is checked out using svn.])
+fi
+AM_CONDITIONAL([USE_SVN], [test -d "$srcdir/.svn"])
+
 dnl Checks for other programs.
 AC_PROG_INSTALL
 

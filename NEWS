@@ -1,3 +1,7 @@
+ext3grep-?
+
+	Print version as first output line.
+
 ext3grep-0.3.1
 
         Accept weird characters in filenames (almost always).

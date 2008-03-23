@@ -52,6 +52,19 @@ pch.h.gch/$(APPLICATIONSUM): $(srcdir)/pch-source.h
 
 endif
 
+if USE_SVN
+ext3grep_SOURCES += revision.cc
+
+revision.cc: FORCE
+	@(cd $(srcdir) && svn info) | grep '^Revision' | sed -e 's/R/char const* svn_revision = "R/;s/$$/";/' > revision.cc.tmp
+	@cmp -s revision.cc revision.cc.tmp || mv revision.cc.tmp revision.cc && echo "Generating revision.cc"
+	@rm -f revision.cc.tmp
+
+FORCE:
+
+.PHONY: FORCE
+endif
+
 # --------------- Maintainer's Section
 
 #dist-hook:

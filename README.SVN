@@ -10,6 +10,7 @@ If you checked out this directory with svn, then you will need to execute:
 
 ./autogen.sh
 
-You only need to do this once.
+You only need to do this once. After that please read INSTALL.
 
-After that please read INSTALL.
+You should use --enable-maintainer-mode with configure if you checked out
+the source code with svn.

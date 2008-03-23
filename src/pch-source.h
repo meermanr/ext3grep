@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <regex.h>
+#include <signal.h>
 #include <cassert>
 #include <cctype>
 #include <cerrno>

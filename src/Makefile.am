@@ -14,12 +14,20 @@ ext3grep_SOURCES = \
 	locate.cc \
 	ext3.h \
 	kernel-jbd.h \
-	jfs_compat.h \
-	debug.h \
-	debug.cc
+	jfs_compat.h
 
 ext3grep_CXXFLAGS = @CXXFLAGS@ @CWD_FLAGS@
 ext3grep_LDADD = @LIBS@ @CWD_LIBS@
+ext3grep_LDFLAGS =
+
+if USE_DEBUG
+ext3grep_SOURCES += backtrace.cc backtrace.h
+ext3grep_LDFLAGS += -rdynamic
+endif
+
+if USE_CWDEBUG
+ext3grep_SOURCES += debug.cc debug.h
+endif
 
 if USE_PCH
 @Makefilein@PREVCXXDEPMODE := $(CXXDEPMODE)
@@ -93,6 +101,15 @@ endif
 MAINTAINERCLEANFILES = $(srcdir)/Makefile.in tags troep* *.cgd
 
 if MAINTAINER_MODE
+
+if !USE_DEBUG
+EXTRA_DIST += backtrace.cc backtrace.h
+endif
+
+if !USE_CWDEBUG
+EXTRA_DIST += debug.cc debug.h
+endif
+
 # Usage: You have to set the CTAGS_ROOT_SRCDIRS environment variable yourself,
 # for example: export CTAGS_ROOT_SRCDIRS="/usr/src/gtk/glib-current /usr/src/gtk/gtk+-current"
 # Then run 'vim -u /some/path/.vimrc' where the .vimrc is the normal .vimrc, but with the

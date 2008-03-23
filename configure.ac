@@ -6,7 +6,7 @@ dnl CW_VERSION_REVISION            : Increment every public release; or set to 0
 
 define(CW_VERSION_MAJOR, 0)
 define(CW_VERSION_MINOR, 3)
-define(CW_VERSION_REVISION, 1)
+define(CW_VERSION_REVISION, 2)
 
 define(CW_PACKAGE_NAME, [ext3grep])
 define(CW_BUGREPORT, [carlo@alinoe.com])
@@ -67,6 +67,12 @@ if test -d "$srcdir/.svn"; then
   AC_DEFINE_UNQUOTED([USE_SVN], 1, [Define when this project is checked out using svn.])
 fi
 AM_CONDITIONAL([USE_SVN], [test -d "$srcdir/.svn"])
+
+dnl Set this conditional when --enable-debug was given.
+AM_CONDITIONAL([USE_DEBUG], [test x"$cw_config_debug" = x"yes"])
+
+dnl Set this conditional if we're linking with libcwd.
+AM_CONDITIONAL([USE_CWDEBUG], [test x"$cw_used_libcwd" = x"yes"])
 
 dnl Checks for other programs.
 AC_PROG_INSTALL

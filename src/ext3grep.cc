@@ -34,6 +34,7 @@
 #include <getopt.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <cerrno>
 #include <fstream>
 #include <iostream>
@@ -49,6 +50,9 @@
 #endif
 
 #include "locate.h"
+#ifdef DEBUG
+#include "backtrace.h"
+#endif
 
 // Super block accessors.
 int inode_count(ext3_super_block const& super_block) { return super_block.s_inodes_count; }
@@ -163,7 +167,7 @@ enum is_directory_type {
 };
 
 // Commandline options.
-const char *progname;
+char const* progname;
 bool commandline_superblock = false;
 int commandline_group = -1;
 int commandline_inode_to_block = -1;
@@ -196,6 +200,8 @@ int commandline_show_journal_inodes = -1;
 std::string commandline_restore_file;
 bool commandline_restore_all = false;
 bool commandline_show_hardlinks = false;
+bool commandline_debug = false;
+bool commandline_debug_malloc = false;
 
 struct Parent;
 class DirectoryBlockStats;
@@ -287,6 +293,25 @@ int device_fd;
 #endif
 static std::string const outputdir = "RESTORED_FILES/";
 bool feature_incompat_filetype = false;
+char* reserved_memory;
+
+// Define our own assert.
+#undef ASSERT
+#ifdef DEBUG
+void assert_fail(char const* expr, char const* file, int line, char const* function)
+{
+  std::cout << file << ':' << line << ": " << function << ": Assertion `" << expr << "' failed." << std::endl;
+  std::cout << "Backtrace:\n";
+  dump_backtrace_on(std::cout);
+  raise(6);
+}
+#define STRING(x) #x
+#define ASSERT(expr) \
+        (static_cast<void>((expr) ? 0 \
+                                  : (assert_fail(STRING(expr), __FILE__, __LINE__, __PRETTY_FUNCTION__), 0)))
+#else
+#define ASSERT(expr) assert(expr)
+#endif
 
 //-----------------------------------------------------------------------------
 //
@@ -307,10 +332,49 @@ void init_consts()
   page_size_ = sysconf(_SC_PAGESIZE);
 #endif
 
+  // Sanity checks.
+  assert(super_block.s_magic == 0xEF53);	// EXT3.
+  assert(super_block.s_creator_os == 0);	// Linux.
+  assert(super_block.s_block_group_nr == 0);	// First super block.
+  assert((uint32_t)groups_ * inodes_per_group(super_block) == inode_count_);	// All inodes belong to a group.
+  // extX does not support block fragments.
+  // "File System Forensic Analysis, chapter 14, Overview --> Blocks"
+  assert(block_size_ == fragment_size(super_block));
+  // The inode bitmap has to fit in a single block.
+  assert(inodes_per_group(super_block) <= 8 * block_size_);
+  // inode_size is expected to be (at least) 128.
+  assert(inode_size_ >= 128);
+  // But theoretically sizeof(Inode) can be more (not at the moment).
+  assert((size_t)inode_size_ <= sizeof(Inode));
+  // There should fit exactly an integer number of inodes in one block.
+  assert((block_size_ / inode_size_) * inode_size_ == block_size_);
+  // Space needed for the inode table should match the returned value of the number of blocks they need.
+  assert((inodes_per_group_ * inode_size_ - 1) / block_size_ + 1 == inode_blocks_per_group(super_block));
+  // File system must have a journal.
+  assert((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_HAS_JOURNAL));
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_DIR_PREALLOC))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_DIR_PREALLOC is.\n";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_IMAGIC_INODES))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_IMAGIC_INODES is (sounds scary).\n";
+  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_EXT_ATTR))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_EXT_ATTR is.\n";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_COMPRESSION))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_COMPRESSION is (Houston, we have problem).\n";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_RECOVER))
+  {
+    std::cout << "WARNING: EXT3_FEATURE_INCOMPAT_RECOVER is set. "
+        "This either means that your partition is still mounted, and/or the file system is in an unclean state.\n";
+  }
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_JOURNAL_DEV))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_JOURNAL_DEV is, but it doesn't sound good!\n";
+  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_META_BG))
+    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_META_BG is.\n";
+
   // Initialize accept bitmasks.
   init_accept();
 
   // Global arrays.
+  reserved_memory = new char [50000];				// This is freed in dump_backtrace_on to make sure we have enough memory.
   all_inodes = new Inode* [groups_];
 #if USE_MMAP
   all_mmaps = new void* [groups_];
@@ -319,7 +383,6 @@ void init_consts()
   // We use this array to know of which groups we loaded the metadata. Therefore zero it out.
   std::memset(block_bitmap, 0, sizeof(uint64_t*) * groups_);
   inode_bitmap = new uint64_t* [groups_];
-  assert((size_t)inode_size_ <= sizeof(Inode));
   assert((size_t)inode_size_ == sizeof(Inode));			// This fails if kernel headers are used.
   inodes_buf = new char[inodes_per_group_ * inode_size_];
 
@@ -331,13 +394,13 @@ void init_consts()
   int const group_descriptor_table_block = super_block_block + 1;
 
   // Allocate group descriptor table.
-  assert(EXT3_DESC_PER_BLOCK(&super_block) * sizeof(ext3_group_desc) == (size_t)block_size_);
+  ASSERT(EXT3_DESC_PER_BLOCK(&super_block) * sizeof(ext3_group_desc) == (size_t)block_size_);
   group_descriptor_table = new ext3_group_desc[groups_];
 
   device.seekg(block_to_offset(group_descriptor_table_block));
-  assert(device.good());
+  ASSERT(device.good());
   device.read(reinterpret_cast<char*>(group_descriptor_table), sizeof(ext3_group_desc) * groups_);
-  assert(device.good());
+  ASSERT(device.good());
 }
 
 void load_meta_data(int group);
@@ -346,7 +409,7 @@ inline Inode& get_inode(int inode)
 {
   int group = (inode - 1) / inodes_per_group_;
   unsigned int bit = inode - 1 - group * inodes_per_group_;
-  assert(bit < 8U * block_size_);
+  ASSERT(bit < 8U * block_size_);
   if (block_bitmap[group] == NULL)
     load_meta_data(group);
   return all_inodes[group][bit];
@@ -356,7 +419,7 @@ void init_journal_consts(void)
 {
   // Initialize journal constants.
   journal_block_size_ = be2le(journal_super_block.s_blocksize);
-  assert(journal_block_size_ == block_size_);	// Sorry, I'm trying to recover my own data-- have no time to deal with this.
+  ASSERT(journal_block_size_ == block_size_);	// Sorry, I'm trying to recover my own data-- have no time to deal with this.
   journal_maxlen_ = be2le(journal_super_block.s_maxlen);
   journal_first_ = be2le(journal_super_block.s_first);
   journal_sequence_ = be2le(journal_super_block.s_sequence);
@@ -367,9 +430,9 @@ void init_journal_consts(void)
 unsigned char* get_block(int block, unsigned char* block_buf)
 {
   device.seekg(block_to_offset(block));
-  assert(device.good());
+  ASSERT(device.good());
   device.read((char*)block_buf, block_size_);
-  assert(device.good());
+  ASSERT(device.good());
   return block_buf;
 }
 
@@ -431,7 +494,7 @@ public:
     for (std::string::const_iterator iter = M_filename.begin(); iter != M_filename.end(); ++iter)
     {
       __u8 c = *iter;
-      assert(!S_illegal[c]);
+      ASSERT(!S_illegal[c]);
       if (S_unlikely[c])
         M_mask.set(c);
     }
@@ -494,9 +557,9 @@ static bool is_inode(int block)
 int block_to_inode(int block)
 {
   int group = block_to_group(super_block, block);
-  assert(block_bitmap[group]);
+  ASSERT(block_bitmap[group]);
   int inode_table = group_descriptor_table[group].bg_inode_table;
-  assert(block >= inode_table && (size_t)block_size_ * (block + 1) <= (size_t)block_size_ * inode_table + inodes_per_group_ * inode_size_);
+  ASSERT(block >= inode_table && (size_t)block_size_ * (block + 1) <= (size_t)block_size_ * inode_table + inodes_per_group_ * inode_size_);
   return 1 + group * inodes_per_group_ + (size_t)block_size_ * (block - inode_table) / inode_size_;
 }
 
@@ -534,7 +597,7 @@ struct DelayedWarning {
 
   void init(void) { if (!delayed_warning) delayed_warning = new std::ostringstream; }
   operator bool(void) const { return delayed_warning; }
-  std::string str(void) const { assert(delayed_warning); return delayed_warning->str(); }
+  std::string str(void) const { ASSERT(delayed_warning); return delayed_warning->str(); }
   std::ostream& stream(void) { init(); return *delayed_warning; }
 };
 
@@ -590,7 +653,7 @@ class DirectoryBlockStats {
 // Return true if this block looks like it contains a directory.
 is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlockStats& stats, bool start_block, bool certainly_linked, int offset)
 {
-  assert(!start_block || offset == 0);
+  ASSERT(!start_block || offset == 0);
   // Must be aligned to 4 bytes.
   if ((offset & EXT3_DIR_ROUND))
     return isdir_no;
@@ -762,7 +825,7 @@ bool is_allocated(int inode)
   if (!block_bitmap[group])
     load_meta_data(group);
   unsigned int bit = inode - 1 - group * inodes_per_group_;
-  assert(bit < 8U * block_size_);
+  ASSERT(bit < 8U * block_size_);
   struct bitmap_ptr bmp = get_bitmap_mask(bit);
   return (inode_bitmap[group][bmp.index] & bmp.mask);
 }
@@ -788,7 +851,7 @@ void find_block_action(int blocknr, void*)
 void print_directory_action(int blocknr, void*)
 {
   static bool using_static_buffer = false;
-  assert(!using_static_buffer);
+  ASSERT(!using_static_buffer);
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   unsigned char* block = get_block(blocknr, block_buf);
   using_static_buffer = true;
@@ -804,7 +867,7 @@ unsigned int const indirect_bit = 2;
 bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int)
 {
   static bool using_static_buffer = false;
-  assert(!using_static_buffer);
+  ASSERT(!using_static_buffer);
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
   using_static_buffer = true;
@@ -826,7 +889,7 @@ bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, vo
 bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask)
 {
   static bool using_static_buffer = false;
-  assert(!using_static_buffer);
+  ASSERT(!using_static_buffer);
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
   using_static_buffer = true;
@@ -852,7 +915,7 @@ bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(
 bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask)
 {
   static bool using_static_buffer = false;
-  assert(!using_static_buffer);
+  ASSERT(!using_static_buffer);
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
   using_static_buffer = true;
@@ -916,6 +979,7 @@ bool iterate_over_all_blocks_of(Inode& inode, void (*action)(int, void*), void* 
 
 void load_inodes(int group)
 {
+  DoutEntering(dc::notice, "load_inodes(" << group << ")");
   if (!block_bitmap[group])
     load_meta_data(group);
   // The start block of the inode table.
@@ -933,9 +997,9 @@ void load_inodes(int group)
   // Load all inodes into memory.
   all_inodes[group] = new Inode[inodes_per_group_];	// sizeof(Inode) == inode_size_
   device.seekg(block_to_offset(block_number));
-  assert(device.good());
+  ASSERT(device.good());
   device.read(reinterpret_cast<char*>(all_inodes[group]), inodes_per_group_ * inode_size_);
-  assert(device.good());
+  ASSERT(device.good());
 #ifdef DEBUG
   // We set this, so that we can find back where an inode struct came from
   // during debugging of this program in gdb. It is not used anywhere.
@@ -953,15 +1017,15 @@ void load_meta_data(int group)
   // Load block bitmap.
   block_bitmap[group] = new uint64_t[block_size_ / sizeof(uint64_t)];
   device.seekg(block_to_offset(group_descriptor_table[group].bg_block_bitmap));
-  assert(device.good());
+  ASSERT(device.good());
   device.read(reinterpret_cast<char*>(block_bitmap[group]), block_size_);
-  assert(device.good());
+  ASSERT(device.good());
   // Load inode bitmap.
   inode_bitmap[group] = new uint64_t[block_size_ / sizeof(uint64_t)];
   device.seekg(block_to_offset(group_descriptor_table[group].bg_inode_bitmap));
-  assert(device.good());
+  ASSERT(device.good());
   device.read(reinterpret_cast<char*>(inode_bitmap[group]), block_size_);
-  assert(device.good());
+  ASSERT(device.good());
   // Load all inodes into memory.
   load_inodes(group);
 }
@@ -975,89 +1039,21 @@ void load_meta_data(int group)
 extern char const* svn_revision;
 #endif
 
-int main(int argc, char* argv[])
+void run_program(void)
 {
-  Debug(debug::init());
+  Debug(if (!commandline_debug) dc::notice.off());
+  Debug(if (commandline_debug) while(!dc::notice.is_on()) dc::notice.on());
+  Debug(if (!commandline_debug_malloc) dc::malloc.off());
+  Debug(if (commandline_debug_malloc) while(!dc::malloc.is_on()) dc::malloc.on());
+  Debug(libcw_do.on());
 
-#ifdef USE_SVN
-  std::cout << "Running " << svn_revision << '\n';
-#else
-  std::cout << "Running ext3grep version " VERSION "\n";
-#endif
-
-  decode_commandline_options(argc, argv);
-
-  // The size of a super block is 1024 bytes.
-  assert(sizeof(ext3_super_block) == 1024);
-
-  // Open the device.
-  assert(argc == 1);
-  device_name = *argv;
-  device.open(*argv);
-  if (!device.good())
-  {
-    int error = errno;
-    std::cout << std::flush;
-    std::cerr << progname << ": failed to read-only open device \"" << *argv << "\": " << strerror(error) << std::endl;
-    exit(EXIT_FAILURE);
-  }
-#if USE_MMAP
-  device_fd = open(*argv, O_RDONLY);
-  if (device_fd == -1)
-  {
-    int error = errno;
-    std::cout << std::flush;
-    std::cerr << progname << ": failed to open device \"" << *argv << "\" for reading: " << strerror(error) << std::endl;
-    exit(EXIT_FAILURE);
-  }
-#endif
-
-  // Read the first superblock.
-  device.seekg(SUPER_BLOCK_OFFSET);
-  assert(device.good());
-  device.read(reinterpret_cast<char*>(&super_block), sizeof(ext3_super_block));
-  assert(device.good());
-  init_consts();
+  DoutEntering(dc::notice, "run_program()");
 
   if (commandline_superblock && !commandline_journal)
   {
     // Print contents of superblock.
     std::cout << super_block << '\n';
   }
-
-  // Sanity checks.
-  assert(super_block.s_magic == 0xEF53);	// EXT3.
-  assert(super_block.s_creator_os == 0);	// Linux.
-  assert(super_block.s_block_group_nr == 0);	// First super block.
-  assert((uint32_t)groups_ * inodes_per_group(super_block) == inode_count_);	// All inodes belong to a group.
-  // extX does not support block fragments.
-  // "File System Forensic Analysis, chapter 14, Overview --> Blocks"
-  assert(block_size_ == fragment_size(super_block));
-  // The inode bitmap has to fit in a single block.
-  assert(inodes_per_group(super_block) <= 8 * block_size_);
-  // There should fit exactly an integer number of inodes in one block.
-  assert((block_size_ / inode_size_) * inode_size_ == block_size_);
-  // Space needed for the inode table should match the returned value of the number of blocks they need.
-  assert((inodes_per_group_ * inode_size_ - 1) / block_size_ + 1 == inode_blocks_per_group(super_block));
-  // File system must have a journal.
-  assert((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_HAS_JOURNAL));
-  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_DIR_PREALLOC))
-    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_DIR_PREALLOC is.\n";
-  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_IMAGIC_INODES))
-    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_IMAGIC_INODES is (sounds scary).\n";
-  if ((super_block.s_feature_compat & EXT3_FEATURE_COMPAT_EXT_ATTR))
-    std::cout << "WARNING: I don't know what EXT3_FEATURE_COMPAT_EXT_ATTR is.\n";
-  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_COMPRESSION))
-    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_COMPRESSION is (Houston, we have problem).\n";
-  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_RECOVER))
-  {
-    std::cout << "WARNING: EXT3_FEATURE_INCOMPAT_RECOVER is set. "
-        "This either means that your partition is still mounted, and/or the file system is in an unclean state.\n";
-  }
-  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_JOURNAL_DEV))
-    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_JOURNAL_DEV is, but it doesn't sound good!\n";
-  if ((super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_META_BG))
-    std::cout << "WARNING: I don't know what EXT3_FEATURE_INCOMPAT_META_BG is.\n";
 
   // The features that we support.
   feature_incompat_filetype = super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_FILETYPE;
@@ -1067,12 +1063,12 @@ int main(int argc, char* argv[])
   {
     Inode& journal_inode = get_inode(super_block.s_journal_inum);
     int first_block = journal_inode.block()[0];
-    assert(first_block);
+    ASSERT(first_block);
     // Read the first superblock.
     device.seekg(block_to_offset(first_block));
-    assert(device.good());
+    ASSERT(device.good());
     device.read(reinterpret_cast<char*>(&journal_super_block), sizeof(journal_superblock_s));
-    assert(device.good());
+    ASSERT(device.good());
     if (commandline_superblock && commandline_journal)
     {
       // Print contents of superblock.
@@ -1081,7 +1077,7 @@ int main(int argc, char* argv[])
       std::cout << journal_super_block << '\n';
     }
     // Sanity checks.
-    assert(be2le(journal_super_block.s_header.h_magic) == JFS_MAGIC_NUMBER);
+    ASSERT(be2le(journal_super_block.s_header.h_magic) == JFS_MAGIC_NUMBER);
     init_journal_consts();
   }
 
@@ -1194,7 +1190,7 @@ int main(int argc, char* argv[])
       std::cout << std::dec << '\n';
     }
     unsigned int bit = commandline_inode - 1 - commandline_group * inodes_per_group_;
-    assert(bit < 8U * block_size_);
+    ASSERT(bit < 8U * block_size_);
     struct bitmap_ptr bmp = get_bitmap_mask(bit);
     bool allocated = (inode_bitmap[commandline_group][bmp.index] & bmp.mask);
     if (allocated)
@@ -1226,9 +1222,9 @@ int main(int argc, char* argv[])
       }
       unsigned char* block = new unsigned char[block_size_];    
       device.seekg(block_to_offset(commandline_block));
-      assert(device.good());
+      ASSERT(device.good());
       device.read(reinterpret_cast<char*>(block), block_size_);
-      assert(device.good());
+      ASSERT(device.good());
       if (commandline_print)
       {
 	std::cout << "Hex dump of block " << commandline_block << ":\n";
@@ -1237,7 +1233,7 @@ int main(int argc, char* argv[])
       }
       std::cout << "Group: " << commandline_group << '\n';
       unsigned int bit = commandline_block - first_data_block(super_block) - commandline_group * blocks_per_group(super_block);
-      assert(bit < 8U * block_size_);
+      ASSERT(bit < 8U * block_size_);
       struct bitmap_ptr bmp = get_bitmap_mask(bit);
       DirectoryBlockStats stats;
       is_directory_type isdir = is_directory(block, commandline_block, stats, false);
@@ -1332,8 +1328,8 @@ int main(int argc, char* argv[])
 	else
 	{
 	  std::cout << "Block " << commandline_block << " is Unallocated.\n";
-	  assert(!is_inode(commandline_block));	// All inode blocks are allocated.
-	  assert(!journal);			// All journal blocks are allocated.
+	  ASSERT(!is_inode(commandline_block));	// All inode blocks are allocated.
+	  ASSERT(!journal);			// All journal blocks are allocated.
 	}
       }
       else
@@ -1499,7 +1495,7 @@ int main(int argc, char* argv[])
   {
     bool start = !commandline_search_start.empty();
     size_t len = start ? commandline_search_start.length() : commandline_search.length();
-    assert(len <= (size_t)block_size_);
+    ASSERT(len <= (size_t)block_size_);
     char* pattern = new char [len];
     strncpy(pattern, start ? commandline_search_start.data() : commandline_search.data(), len);
     static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
@@ -1512,7 +1508,7 @@ int main(int argc, char* argv[])
     else
       std::cout << "Blocks ";
     std::cout << (start ? "starting with" : "containing") << " \"" << std::string(pattern, len) << "\":" << std::flush;
-    assert((inodes_per_group_ * inode_size_) % block_size_ == 0);
+    ASSERT((inodes_per_group_ * inode_size_) % block_size_ == 0);
     for (int group = 0; group < groups_; ++group)
     {
       int first_block = group_to_block(super_block, group);  
@@ -1578,7 +1574,7 @@ int main(int argc, char* argv[])
       found_block = false;
       block_looking_for = commandline_search_inode;
       bool reused_or_corrupted_indirect_block2 = iterate_over_all_blocks_of(ino, find_block_action);
-      assert(!reused_or_corrupted_indirect_block2);
+      ASSERT(!reused_or_corrupted_indirect_block2);
       if (found_block)
         std::cout << ' ' << inode << std::flush;
     }
@@ -1655,6 +1651,69 @@ int main(int argc, char* argv[])
 #if USE_MMAP
   close(device_fd);
 #endif
+}
+
+int main(int argc, char* argv[])
+{
+  Debug(debug::init());
+
+#ifdef USE_SVN
+  std::cout << "Running " << svn_revision << '\n';
+#else
+  std::cout << "Running ext3grep version " VERSION "\n";
+#endif
+
+  decode_commandline_options(argc, argv);
+
+  // Open the device.
+  assert(argc == 1);
+  device_name = *argv;
+  device.open(*argv);
+  if (!device.good())
+  {
+    int error = errno;
+    std::cout << std::flush;
+    std::cerr << progname << ": failed to read-only open device \"" << *argv << "\": " << strerror(error) << std::endl;
+    exit(EXIT_FAILURE);
+  }
+#if USE_MMAP
+  device_fd = open(*argv, O_RDONLY);
+  if (device_fd == -1)
+  {
+    int error = errno;
+    std::cout << std::flush;
+    std::cerr << progname << ": failed to open device \"" << *argv << "\" for reading: " << strerror(error) << std::endl;
+    exit(EXIT_FAILURE);
+  }
+#endif
+
+  // Read the first superblock.
+
+  // The size of a super block is 1024 bytes.
+  assert(sizeof(ext3_super_block) == 1024);
+  device.seekg(SUPER_BLOCK_OFFSET);
+  assert(device.good());
+  device.read(reinterpret_cast<char*>(&super_block), sizeof(ext3_super_block));
+  assert(device.good());
+
+  init_consts();
+
+  try
+  {
+    run_program();
+  }
+  catch (std::bad_alloc& error)
+  {
+    std::cerr << "Caught exception " << error.what() << '\n';
+#ifdef CWDEBUG
+    // We never get here, because libcwd doesn't throw bad::alloc: it dumps core.
+    Dout(dc::malloc, malloc_report << '.');
+#else
+    std::cerr << "Please install libcwd (http://sourceforge.net/project/showfiles.php?group_id=47536),"
+        " reconfigure & recompile ext3grep and rerun the command with --debug." << std::endl;
+#endif
+    exit(EXIT_FAILURE);
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -1825,7 +1884,7 @@ std::ostream& operator<<(std::ostream& os, journal_superblock_t const& journal_s
   os << std::dec << '\n';
   int32_t nr_users = be2le(journal_super_block.s_nr_users);
   os << "Number of file systems using journal: " << nr_users << '\n';
-  assert(nr_users <= 48);
+  ASSERT(nr_users <= 48);
   os << "Location of superblock copy: " << be2le(journal_super_block.s_dynsuper) << '\n';
   os << "Max journal blocks per transaction: " << be2le(journal_super_block.s_max_transaction) << '\n';
   os << "Max file system blocks per transaction: " << be2le(journal_super_block.s_max_trans_data) << '\n';
@@ -1862,9 +1921,9 @@ std::ostream& operator<<(std::ostream& os, journal_revoke_header_t const& journa
   os << journal_revoke_header.r_header << '\n';
   uint32_t count = be2le(journal_revoke_header.r_count);
   os << "Bytes used: " << count << '\n';
-  assert(sizeof(journal_revoke_header_t) <= count && count <= (size_t)block_size_);
+  ASSERT(sizeof(journal_revoke_header_t) <= count && count <= (size_t)block_size_);
   count -= sizeof(journal_revoke_header_t);
-  assert(count % sizeof(__be32) == 0);
+  ASSERT(count % sizeof(__be32) == 0);
   count /= sizeof(__be32);
   __be32* ptr = reinterpret_cast<__be32*>((unsigned char*)&journal_revoke_header + sizeof(journal_revoke_header_t));
   int c = 0;
@@ -1900,6 +1959,10 @@ static void print_usage(std::ostream& os)
   os << "                         Can be used multiple times.\n";
   os << "  --journal              Show content of journal.\n";
   os << "  --show-path-inodes     Show the inode of each directory component in paths.\n";
+#ifdef CWDEBUG
+  os << "  --debug                Turn on printing of debug output.\n";
+  os << "  --debug-malloc         Turn on debugging of memory allocations.\n";
+#endif
 //       012345678901234567890123456789012345678901234567890123456789012345678901234567890
   os << "Filters:\n";
   os << "  --group grp            Only process group 'grp'.\n";
@@ -2008,7 +2071,9 @@ enum opts {
   opt_restore_file,
   opt_restore_all,
   opt_show_hardlinks,
-  opt_help
+  opt_help,
+  opt_debug,
+  opt_debug_malloc
 };
 
 static void decode_commandline_options(int& argc, char**& argv)
@@ -2050,6 +2115,8 @@ static void decode_commandline_options(int& argc, char**& argv)
     {"restore-file", 1, &long_option, opt_restore_file},
     {"restore-all", 0, &long_option, opt_restore_all},
     {"show-hardlinks", 0, &long_option, opt_show_hardlinks},
+    {"debug", 0, &long_option, opt_debug},
+    {"debug-malloc", 0, &long_option, opt_debug_malloc},
     {NULL, 0, NULL, 0}
   };
 
@@ -2070,6 +2137,12 @@ static void decode_commandline_options(int& argc, char**& argv)
           case opt_version:
             print_version();
             exit(EXIT_SUCCESS);
+	  case opt_debug:
+	    commandline_debug = true;
+	    break;
+	  case opt_debug_malloc:
+	    commandline_debug_malloc = true;
+	    break;
 	  case opt_superblock:
 	    commandline_superblock = true;
 	    break;
@@ -2338,14 +2411,14 @@ static void decode_commandline_options(int& argc, char**& argv)
       std::cout << "before " << before.substr(0, before.length() - 1);
     std::cout << '.' << std::endl;
     if (commandline_before && commandline_after)
-      assert(commandline_after < commandline_before);
+      ASSERT(commandline_after < commandline_before);
   }
   if (!accepted_filenames.empty())
   {
     std::cout << "Accepted filenames:";
     for (std::set<Accept>::iterator iter = accepted_filenames.begin(); iter != accepted_filenames.end(); ++iter)
     {
-      assert(iter->accepted());
+      ASSERT(iter->accepted());
       std::cout << " '" << iter->filename() << "'";
     }
     outputwritten = true;
@@ -2571,7 +2644,7 @@ static void print_inode(Inode& inode)
 
 char const* dir_entry_file_type(int file_type, bool ls)
 {
-  assert(feature_incompat_filetype);
+  ASSERT(feature_incompat_filetype);
   switch ((file_type & 7))
   {
     case EXT3_FT_UNKNOWN:
@@ -2651,7 +2724,7 @@ int print_symlink(std::ostream& os, Inode& inode)
       for (int j = 0; j < 4; ++j)
       {
 	char c = translate.chars[j];
-	assert(c != 0);
+	ASSERT(c != 0);
 	os << c;
 	if (++len == inode.size())
 	  return len;
@@ -2660,11 +2733,11 @@ int print_symlink(std::ostream& os, Inode& inode)
   }
   else
   {
-    assert(inode.block()[0]);
-    assert(!inode.block()[1]);			// Name can't be longer than block_size_?!
+    ASSERT(inode.block()[0]);
+    ASSERT(!inode.block()[1]);			// Name can't be longer than block_size_?!
     unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
     unsigned char* block = get_block(inode.block()[0], block_buf);
-    assert(block[block_size_ - 1] == '\0');	// Zero termination exists.
+    ASSERT(block[block_size_ - 1] == '\0');	// Zero termination exists.
     len = strlen((char*)block);
     os << block;
   }
@@ -2793,7 +2866,7 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
       if (!deleted && allocated && !reallocated)	// Existing directory?
       {
 	bool reused_or_corrupted_indirect_block3 = iterate_over_all_blocks_of(get_inode(dir_entry.inode), iterate_over_existing_directory_action, &idata);
-	assert(!reused_or_corrupted_indirect_block3);
+	ASSERT(!reused_or_corrupted_indirect_block3);
       }
       else
       {
@@ -2824,9 +2897,9 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
 	    idata.block_buf = new unsigned char [block_size_];
 	    get_block(blocknr, idata.block_buf);
 	    ext3_dir_entry_2* dir_entry = reinterpret_cast<ext3_dir_entry_2*>(idata.block_buf);
-	    assert(dir_entry->name_len == 1 && dir_entry->name[0] == '.');
+	    ASSERT(dir_entry->name_len == 1 && dir_entry->name[0] == '.');
 	    dir_entry = reinterpret_cast<ext3_dir_entry_2*>(idata.block_buf + dir_entry->rec_len);
-	    assert(dir_entry->name_len == 2 && dir_entry->name[0] == '.' && dir_entry->name[1] == '.');
+	    ASSERT(dir_entry->name_len == 2 && dir_entry->name[0] == '.' && dir_entry->name[1] == '.');
 	    if (dir_entry->inode == parent->M_inodenr)
 	      iterate_over_directory_action(blocknr, &idata);
 	    else
@@ -2923,7 +2996,7 @@ struct DirEntry {
 
 bool DirEntry::exactly_equal(DirEntry const& de) const
 {
-  assert(index.cur == de.index.cur);
+  ASSERT(index.cur == de.index.cur);
   return M_inode == de.M_inode && M_name == de.M_name && M_file_type == de.M_file_type && index.next == de.index.next;
 }
 
@@ -2993,7 +3066,7 @@ void DirectoryBlock::read_block(int block, std::list<DirectoryBlock>::iterator l
 {
   M_block = block;
   static bool using_static_buffer = false;
-  assert(!using_static_buffer);
+  ASSERT(!using_static_buffer);
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   get_block(block, block_buf);
   using_static_buffer = true;
@@ -3001,7 +3074,7 @@ void DirectoryBlock::read_block(int block, std::list<DirectoryBlock>::iterator l
   // Sort the vector by dir_entry pointer.
   std::sort(M_dir_entry.begin(), M_dir_entry.end(), DirEntrySortPred());
   int size = M_dir_entry.size();
-  assert(size >= 2);	// We should have at least the '.' and '..' entries.
+  ASSERT(size >= 2);	// We should have at least the '.' and '..' entries.
   // Make a temporary backup of the dir_entry pointers.
   // At the same time, overwrite the pointers in the vector with with the index.
   ext3_dir_entry_2 const** index_to_dir_entry = new ext3_dir_entry_2 const* [M_dir_entry.size()];
@@ -3024,7 +3097,7 @@ void DirectoryBlock::read_block(int block, std::list<DirectoryBlock>::iterator l
         break;
       }
     // Either this entry points to another that we found, or it should point to the end of this block.
-    assert(next > 0 || (unsigned char*)next_dir_entry == block_buf + block_size_);
+    ASSERT(next > 0 || (unsigned char*)next_dir_entry == block_buf + block_size_);
     // If we didn't find anything, use the value 0.
     iter->index.next = next;
   }
@@ -3045,7 +3118,7 @@ class Directory {
   std::list<DirectoryBlock> const& blocks(void) const { return M_blocks; }
 
   uint32_t inode_number(void) const { return M_inode_number; }
-  int first_block(void) const { assert(!M_blocks.empty()); return M_blocks.begin()->block(); }
+  int first_block(void) const { ASSERT(!M_blocks.empty()); return M_blocks.begin()->block(); }
 };
 
 //-----------------------------------------------------------------------------
@@ -3142,7 +3215,7 @@ static void hist_init(size_t min, size_t max)
   S_min = min;
   S_max = max;
 
-  assert(max > min);
+  ASSERT(max > min);
 
   S_bs = 1;
   while ((max - 1 - min) / S_bs > histsize - 1)
@@ -3153,7 +3226,7 @@ static void hist_init(size_t min, size_t max)
 
 static void hist_add(size_t val)
 {
-  assert(val >= S_min && val < S_max);
+  ASSERT(val >= S_min && val < S_max);
   histo[(val - S_min) / S_bs] += 1;
   S_maxcount = std::max(S_maxcount, histo[(val - S_min) / S_bs]);
 }
@@ -3300,9 +3373,9 @@ void DescriptorRevoke::add_block_descriptors(void)
 DescriptorRevoke::DescriptorRevoke(uint32_t block, uint32_t sequence, journal_revoke_header_t* revoke_header) : Descriptor(block, sequence)
 {
   uint32_t count = be2le(revoke_header->r_count);
-  assert(sizeof(journal_revoke_header_t) <= count && count <= (size_t)block_size_);
+  ASSERT(sizeof(journal_revoke_header_t) <= count && count <= (size_t)block_size_);
   count -= sizeof(journal_revoke_header_t);
-  assert(count % sizeof(__be32) == 0);
+  ASSERT(count % sizeof(__be32) == 0);
   count /= sizeof(__be32);
   __be32* ptr = reinterpret_cast<__be32*>((unsigned char*)revoke_header + sizeof(journal_revoke_header_t));
   for (uint32_t b = 0; b < count; ++b)
@@ -3331,7 +3404,7 @@ class Transaction {
     std::vector<Descriptor*> M_descriptor;
   public:
     void init(int block, int sequence) { M_block = block; M_sequence = sequence; M_committed = false; }
-    void set_committed(void) { assert(!M_committed); M_committed = true; }
+    void set_committed(void) { ASSERT(!M_committed); M_committed = true; }
     void append(Descriptor* descriptor) { M_descriptor.push_back(descriptor); }
 
     void print_descriptors(void) const;
@@ -3393,7 +3466,7 @@ static void add_block_descriptor(uint32_t block, Descriptor* descriptor)
   {
     std::pair<block_to_descriptors_map_type::iterator, bool> res =
         block_to_descriptors_map.insert(block_to_descriptors_map_type::value_type(block, std::vector<Descriptor*>()));
-    assert(res.second);
+    ASSERT(res.second);
     res.first->second.push_back(descriptor);
   }
   else
@@ -3404,7 +3477,7 @@ static void add_block_in_journal_descriptor(Descriptor* descriptor)
 {
   std::pair<block_in_journal_to_descriptors_map_type::iterator, bool> res =
       block_in_journal_to_descriptors_map.insert(block_in_journal_to_descriptors_map_type::value_type(descriptor->block(), descriptor));
-  assert(res.second);
+  ASSERT(res.second);
 }
 
 static void print_block_descriptors(uint32_t block)
@@ -3526,15 +3599,17 @@ void directory_inode_action(int blocknr, void* data)
 
 static void init_journal(void)
 {
+  DoutEntering(dc::notice, "init_journal()");
+
   // Determine which blocks belong to the journal.
-  assert(is_allocated(super_block.s_journal_inum));	// Maybe this is the way to detect external journals?
+  ASSERT(is_allocated(super_block.s_journal_inum));	// Maybe this is the way to detect external journals?
   Inode& journal_inode = get_inode(super_block.s_journal_inum);
   // Find the block range used by the journal.
   smallest_block_nr = block_count(super_block);
   largest_block_nr = 0;
   bool reused_or_corrupted_indirect_block4 = iterate_over_all_blocks_of(journal_inode, find_blocknr_range_action, NULL, indirect_bit | direct_bit);
-  assert(!reused_or_corrupted_indirect_block4);
-  assert(smallest_block_nr < largest_block_nr);		// A non-external journal must have a size.
+  ASSERT(!reused_or_corrupted_indirect_block4);
+  ASSERT(smallest_block_nr < largest_block_nr);		// A non-external journal must have a size.
   min_journal_block = smallest_block_nr;
   max_journal_block = largest_block_nr + 1;
   std::cout << "Minimum / maximum journal block: " << min_journal_block << " / " << max_journal_block << '\n';
@@ -3543,11 +3618,11 @@ static void init_journal(void)
   is_indirect_block_in_journal_bitmap = new uint64_t [size];
   memset(is_indirect_block_in_journal_bitmap, 0, size * sizeof(uint64_t));
   bool reused_or_corrupted_indirect_block5 = iterate_over_all_blocks_of(journal_inode, indirect_journal_block_action, NULL, indirect_bit);
-  assert(!reused_or_corrupted_indirect_block5);
+  ASSERT(!reused_or_corrupted_indirect_block5);
   journal_block_bitmap = new uint64_t [size];
   memset(journal_block_bitmap, 0, size * sizeof(uint64_t));
   bool reused_or_corrupted_indirect_block6 = iterate_over_all_blocks_of(journal_inode, fill_journal_bitmap_action, NULL, indirect_bit | direct_bit);
-  assert(!reused_or_corrupted_indirect_block6);
+  ASSERT(!reused_or_corrupted_indirect_block6);
   // Initialize the Descriptors.
   std::cout << "Loading journal descriptors..." << std::flush;
   wrapped_journal_sequence = 0;
@@ -3556,8 +3631,8 @@ static void init_journal(void)
   all_descriptors.resize(number_of_descriptors);
   uint32_t descriptor_count = 0;
   iterate_over_journal(action_tag_fill, action_revoke_fill, action_commit_fill, &descriptor_count);
-  assert(all_descriptors.size() == number_of_descriptors);
-  assert(number_of_descriptors == 0 || all_descriptors[number_of_descriptors - 1]->descriptor_type() != dt_unknown);
+  ASSERT(all_descriptors.size() == number_of_descriptors);
+  ASSERT(number_of_descriptors == 0 || all_descriptors[number_of_descriptors - 1]->descriptor_type() != dt_unknown);
   // Sort the descriptors in ascending sequence number.
   std::sort(all_descriptors.begin(), all_descriptors.end(), AllDescriptorsPred());
   for (std::vector<Descriptor*>::iterator iter = all_descriptors.begin(); iter != all_descriptors.end(); ++iter)
@@ -3582,7 +3657,7 @@ static void init_journal(void)
 	  res.first->second.set_committed();
         break;
       case dt_unknown:
-        assert((*iter)->descriptor_type() != dt_unknown);	// Fail; this should really never happen.
+        ASSERT((*iter)->descriptor_type() != dt_unknown);	// Fail; this should really never happen.
 	break;
     }
   }
@@ -3652,7 +3727,7 @@ static bool is_journal(int blocknr)
 {
   if (super_block.s_journal_dev)
   {
-    assert(!commandline_journal);
+    ASSERT(!commandline_journal);
     return false;
   }
   if (!is_in_journal(blocknr))
@@ -3663,7 +3738,7 @@ static bool is_journal(int blocknr)
 
 static bool is_indirect_block_in_journal(int blocknr)
 {
-  assert(is_indirect_block_in_journal_bitmap);
+  ASSERT(is_indirect_block_in_journal_bitmap);
   if (blocknr >= max_journal_block || blocknr < min_journal_block)
     return false;
   struct bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
@@ -3687,7 +3762,7 @@ static int journal_block_contains_inodes(int blocknr)
 static int journal_block_to_real_block(int blocknr)
 {
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
-  assert(blocknr >= 0 && blocknr < journal_maxlen_);
+  ASSERT(blocknr >= 0 && blocknr < journal_maxlen_);
   if (blocknr < 12)
     return journal_inode.block()[blocknr];
   blocknr -= 12;
@@ -3708,7 +3783,7 @@ static int journal_block_to_real_block(int blocknr)
     return indirect_block[blocknr % vpb];
   }
   blocknr -= vpb * vpb;
-  assert(blocknr < vpb * vpb * vpb);
+  ASSERT(blocknr < vpb * vpb * vpb);
   get_block(journal_inode.block()[EXT3_TIND_BLOCK], block_buf);
   __le32* tripple_indirect_block = reinterpret_cast<__le32*>(block_buf);
   get_block(tripple_indirect_block[blocknr / (vpb * vpb)], block_buf);
@@ -3875,7 +3950,7 @@ void get_inodes_from_journal(int inode, std::vector<std::pair<int, Inode> >& ino
       if (descriptor.descriptor_type() != dt_tag)
         continue;
       DescriptorTag& tag(static_cast<DescriptorTag&>(descriptor));
-      assert(tag.block() == block);
+      ASSERT(tag.block() == block);
       static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
       get_block(descriptor.block(), block_buf);
       Inode* inode_ptr = reinterpret_cast<Inode*>(block_buf + offset);
@@ -3898,7 +3973,7 @@ void get_inodes_from_journal(int inode, std::vector<std::pair<int, Inode> >& ino
 // This pseudo vector only stores non-zero block values.
 // If 'blocknr' is empty, then the vector is empty.
 
-#define BVASSERT(x) assert(x)
+#define BVASSERT(x) ASSERT(x)
 
 union blocknr_vector_type {
   size_t blocknr;		// The must be a size_t in order to align the least significant bit with the least significant bit of blocknr_vector.
@@ -3941,7 +4016,7 @@ void blocknr_vector_type::push_back(uint32_t bnr)
 {
   if (empty())
   {
-    assert(bnr);
+    ASSERT(bnr);
     blocknr = (bnr << 1) | 1;
   }
   else if (is_vector())
@@ -3967,7 +4042,7 @@ void blocknr_vector_type::push_back(uint32_t bnr)
 
 void blocknr_vector_type::remove(uint32_t blknr)
 {
-  assert(is_vector());
+  ASSERT(is_vector());
   uint32_t size = blocknr_vector[0];
   int found = 0;
   for (uint32_t j = 1; j <= size; ++j)
@@ -3976,7 +4051,7 @@ void blocknr_vector_type::remove(uint32_t blknr)
       found = j;
       break;
     }
-  assert(found);
+  ASSERT(found);
   blocknr_vector[found] = blocknr_vector[size];
   blocknr_vector[0] = --size;
   if (size == 1)
@@ -3996,6 +4071,9 @@ void init_dir_inode_to_block_cache(void)
 {
   if (dir_inode_to_block_cache)
     return;
+
+  DoutEntering(dc::notice, "init_dir_inode_to_block_cache()");
+
   dir_inode_to_block_cache = new blocknr_vector_type [inode_count_ + 1];
   std::memset(dir_inode_to_block_cache, 0, sizeof(blocknr_vector_type) * (inode_count_ + 1));
   std::string device_name_basename = device_name.substr(device_name.find_last_of('/') + 1);
@@ -4032,7 +4110,7 @@ void init_dir_inode_to_block_cache(void)
 	if (result == isdir_start)
 	{
 	  ext3_dir_entry_2* dir_entry = reinterpret_cast<ext3_dir_entry_2*>(block_ptr);
-	  assert(dir_entry->name_len == 1 && dir_entry->name[0] == '.');
+	  ASSERT(dir_entry->name_len == 1 && dir_entry->name[0] == '.');
 	  if (dir_inode_to_block_cache[dir_entry->inode].empty())
 	    std::cout << 'D' << std::flush;
 	  else
@@ -4100,7 +4178,7 @@ void init_dir_inode_to_block_cache(void)
       cache >> c;
       if (cache.eof())
 	break;
-      assert(c == ':');
+      ASSERT(c == ':');
       std::vector<uint32_t> blocknr;
       while(cache >> block)
       {
@@ -4108,7 +4186,7 @@ void init_dir_inode_to_block_cache(void)
 	c = cache.get();
 	if (c != ' ')
 	{
-	  assert(c == '\n');
+	  ASSERT(c == '\n');
 	  break;
 	}
       }
@@ -4149,7 +4227,7 @@ void init_dir_inode_to_block_cache(void)
 	  std::cerr << progname << ": inode " << i << " is an allocated inode that does not reference any block. "
 	      "This seems to indicate a corrupted file system. Manual investigation is needed." << std::endl;
 	}
-	assert(first_block);
+	ASSERT(first_block);
 	// If inode is an allocated directory, then we must have found it's directory block already.
 	if (bv.empty())
 	{
@@ -4166,7 +4244,7 @@ void init_dir_inode_to_block_cache(void)
 	    break;	// Remaining blocks have different value.
 	  }
 	// We must have found the actual directory.
-	assert(count == 1);
+	ASSERT(count == 1);
 	// Replace the blocks we found with the canonical block.
 	dir_inode_to_block_cache[i].erase();
 	dir_inode_to_block_cache[i].push_back(first_block);
@@ -4234,7 +4312,7 @@ void init_dir_inode_to_block_cache(void)
 	  }
 	  std::cout << std::flush;
 	}
-	assert(iter2 != block_in_journal_to_descriptors_map.end());
+	ASSERT(iter2 != block_in_journal_to_descriptors_map.end());
 	uint32_t sequence = iter2->second->sequence();
 	highest_sequence = std::max(highest_sequence, sequence);
       }
@@ -4248,7 +4326,7 @@ void init_dir_inode_to_block_cache(void)
     while (iter != dirs.end())
     {
 #if !INCLUDE_JOURNAL
-      assert(!is_journal(iter->block()));
+      ASSERT(!is_journal(iter->block()));
 #else
       if (is_journal(iter->block()))
       {
@@ -4278,8 +4356,8 @@ void init_dir_inode_to_block_cache(void)
       ++jsinc;
       continue;
     }
-    assert(dirs.size() > 0);
-    assert(size == dirs.size());
+    ASSERT(dirs.size() > 0);
+    ASSERT(size == dirs.size());
 
     // Find blocks in the journal and select the one with the highest sequence number.
     int best_blocknr = -1;
@@ -4381,7 +4459,7 @@ void init_directories(void);
 
 int dir_inode_to_block(uint32_t inode)
 {
-  assert(inode > 0 && inode <= inode_count_);
+  ASSERT(inode > 0 && inode <= inode_count_);
   if (!dir_inode_to_block_cache)
     init_directories();
   blocknr_vector_type const bv = dir_inode_to_block_cache[inode];
@@ -4422,7 +4500,7 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
     std::cout << std::flush;
     std::cerr << "ERROR: dir_inode_to_block(" << inode_number << ") returned -1.\n";
   }
-  assert(first_block != -1);
+  ASSERT(first_block != -1);
 
   // Store a new entry in the all_directories container.
   std::pair<all_directories_type::iterator, bool> res =
@@ -4456,13 +4534,13 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
       inode_to_directory.erase(res2.first);
       std::pair<inode_to_directory_type::iterator, bool> res3 =
 	  inode_to_directory.insert(inode_to_directory_type::value_type(inode_number, res.first));
-      assert(res3.second);
+      ASSERT(res3.second);
     }
     else if (!new_path && old_path)
       std::cout << "Keeping \"" << res2.first->second->first << "\" as \"" << parent->dirname(commandline_show_path_inodes) << " doesn't exist in the locate database.\n";
     else if (!new_path && !old_path)
       std::cout << "Neither exist in the locate database. Keeping \"" << res2.first->second->first << "\".\n";
-    assert(!(new_path && old_path));
+    ASSERT(!(new_path && old_path));
   }
   return false;
 }
@@ -4507,10 +4585,10 @@ bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
     static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
     get_block(blocknr2, block_buf);
     ext3_dir_entry_2 const* dir_entry2 = reinterpret_cast<ext3_dir_entry_2 const*>(block_buf);
-    assert(dir_entry2->inode == dir_entry.inode);
+    ASSERT(dir_entry2->inode == dir_entry.inode);
     dir_entry2 = reinterpret_cast<ext3_dir_entry_2 const*>(block_buf + dir_entry2->rec_len);
-    assert(dir_entry2->name_len == 2 && dir_entry2->name[0] == '.' && dir_entry2->name[1] == '.');
-    assert(dir_entry2->inode);
+    ASSERT(dir_entry2->name_len == 2 && dir_entry2->name[0] == '.' && dir_entry2->name[1] == '.');
+    ASSERT(dir_entry2->inode);
     std::map<uint32_t, int>& inode_to_count(linked ? data->linked : data->unlinked);
     std::map<uint32_t, int>::iterator iter = inode_to_count.find(dir_entry2->inode);
     if (iter == inode_to_count.end())
@@ -4544,7 +4622,7 @@ void link_extended_directory_block_to_inode(unsigned char* block_buf, int blockn
   strncpy(fake_dir_entry.name, directory_iter->second->first.c_str(), fake_dir_entry.name_len);
   Parent dummy_parent(NULL, 0);
   Parent parent(&dummy_parent, &fake_dir_entry, &get_inode(inode), inode);
-  assert(parent.dirname(false) == std::string(directory_iter->second->first));
+  ASSERT(parent.dirname(false) == std::string(directory_iter->second->first));
   // Iterate over all directory blocks that we can reach.
   int depth_store = commandline_depth;
   commandline_depth = 10000;
@@ -4558,6 +4636,8 @@ void init_directories(void)
   if (initialized)
     return;
   initialized = true;
+
+  DoutEntering(dc::notice, "init_directories()");
 
   std::string device_name_basename = device_name.substr(device_name.find_last_of('/') + 1);
   std::string cache_stage2 = device_name_basename + ".ext3grep.stage2";
@@ -4579,7 +4659,7 @@ void init_directories(void)
     Parent parent(&root_inode, 2);
     // Get the block that refers to inode 2.
     int root_blocknr = dir_inode_to_block(2);
-    assert(root_blocknr != -1);	// This should be impossible; inode 2 is never wiped(?).
+    ASSERT(root_blocknr != -1);	// This should be impossible; inode 2 is never wiped(?).
     // Get the contents of the first block of the root directory.
     unsigned char* block_buf = new unsigned char [block_size_];
     get_block(root_blocknr, block_buf);
@@ -4725,7 +4805,7 @@ void init_directories(void)
     {
       cache << iter->first << " '" << iter->second->first << "'";
       Directory& directory(iter->second->second);
-      assert(directory.inode_number() == iter->first);
+      ASSERT(directory.inode_number() == iter->first);
       for (std::list<DirectoryBlock>::iterator iter2 = directory.blocks().begin(); iter2 != directory.blocks().end(); ++iter2)
         cache << ' ' << iter2->block();
       cache << '\n';
@@ -4759,26 +4839,26 @@ void init_directories(void)
         break;
       }
     }
-    assert(!dir_inode_to_block_cache);
+    ASSERT(!dir_inode_to_block_cache);
     dir_inode_to_block_cache = new blocknr_vector_type [inode_count_ + 1];
     std::memset(dir_inode_to_block_cache, 0, sizeof(blocknr_vector_type) * (inode_count_ + 1));
     std::stringstream path;
     while (cache >> inode)
     {
       cache.get(c);
-      assert(c == ' ');
+      ASSERT(c == ' ');
       cache.get(c);
-      assert(c == '\'');
+      ASSERT(c == '\'');
       path.str("");
       cache.get(*path.rdbuf(), '\'');
       if (inode == 2)	// If the function extracts no elements, it calls setstate(failbit).
 	cache.clear();
       cache.get(c);	// Extraction stops on end-of-file or on an element that compares equal to delim (which is not extracted).
-      assert(c == '\'');
+      ASSERT(c == '\'');
       std::pair<all_directories_type::iterator, bool> res = all_directories.insert(all_directories_type::value_type(path.str(), Directory(inode)));
-      assert(res.second);
+      ASSERT(res.second);
       std::pair<inode_to_directory_type::iterator, bool> res2 = inode_to_directory.insert(inode_to_directory_type::value_type(inode, res.first));
-      assert(res2.second);
+      ASSERT(res2.second);
       std::vector<uint32_t> block_numbers;
       while(cache >> blocknr)
       {
@@ -4786,7 +4866,7 @@ void init_directories(void)
 	c = cache.get();
 	if (c != ' ')
 	{
-	  assert(c == '\n');
+	  ASSERT(c == '\n');
 	  break;
 	}
       }
@@ -4814,7 +4894,7 @@ static void print_directory_inode(int inode)
   }
   std::cout << "The first block of the directory is " << first_block << ".\n";
   inode_to_directory_type::iterator iter = inode_to_directory.find(inode);
-  assert(iter != inode_to_directory.end());
+  ASSERT(iter != inode_to_directory.end());
   all_directories_type::iterator directory_iter = iter->second;
   std::cout << "Inode " << inode << " is directory \"" << directory_iter->first << "\".\n";
   if (commandline_dump_names)
@@ -4874,6 +4954,8 @@ void init_files(void)
     return;
   initialized = true;
 
+  DoutEntering(dc::notice, "init_files()");
+
   init_directories();
 
   bool show_inode_dirblock_table = !commandline_inode_dirblock_table.empty();
@@ -4927,11 +5009,11 @@ void init_files(void)
       DirectoryBlock& directory_block(*directory_block_iter);
       if (!is_in_journal(directory_block.block()))
         continue;
-      assert(is_journal(directory_block.block()));
+      ASSERT(is_journal(directory_block.block()));
       block_in_journal_to_descriptors_map_type::iterator descriptors_iter = block_in_journal_to_descriptors_map.find(directory_block.block());
-      assert(descriptors_iter != block_in_journal_to_descriptors_map.end());
+      ASSERT(descriptors_iter != block_in_journal_to_descriptors_map.end());
       Descriptor& descriptor(*descriptors_iter->second);
-      assert(descriptor.descriptor_type() == dt_tag);
+      ASSERT(descriptor.descriptor_type() == dt_tag);
       //DescriptorTag& descriptor_tag(static_cast<DescriptorTag&>(descriptor));
       //journal_data_map_type::iterator iter = journal_data_map.find(descriptor_tag.block());
       //if (iter != journal_data_map.end())
@@ -4987,7 +5069,7 @@ void init_files(void)
 	  iter2->second.push_back(dir_entry_iter);
       }
     }
-    assert((size_t)number_of_files == filename_to_index_map.size());
+    ASSERT((size_t)number_of_files == filename_to_index_map.size());
 
     // Create a two-dimensional array of number_of_directory_blocks x number_of_files.
     std::vector<std::vector<int> > file_dirblock_matrix(number_of_directory_blocks, std::vector<int>(number_of_files, 0));
@@ -5035,7 +5117,7 @@ void init_files(void)
       ++dirblock_index;
       sort_array.push_back(Sorter(iter->second.last_tag_sequence, dirblock_index, directory_block));
     }
-    assert(sort_array.size() == (size_t)number_of_directory_blocks);
+    ASSERT(sort_array.size() == (size_t)number_of_directory_blocks);
     std::sort(sort_array.begin(), sort_array.end());
 
     if (show_inode_dirblock_table && directory_iter == show_inode_dirblock_table_iter)
@@ -5055,7 +5137,7 @@ void init_files(void)
       {
 	//DirectoryBlock& directory_block(iter->directory_block());
 	int sequence = iter->sequence();
-	assert(sequence <= prev_sequence);
+	ASSERT(sequence <= prev_sequence);
 	std::cout << " |" << std::setfill(' ') << std::setw(7) << sequence;
 	prev_sequence = sequence;
       }
@@ -5101,6 +5183,8 @@ void init_files(void)
 
 static void dump_names(void)
 {
+  DoutEntering(dc::notice, "dump_names()");
+
   init_files();
   std::list<std::string> paths;
   for (all_directories_type::iterator iter = all_directories.begin(); iter != all_directories.end(); ++iter)
@@ -5171,6 +5255,8 @@ get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* seq
 
 void show_hardlinks(void)
 {
+  DoutEntering(dc::notice, "show_hardlinks()");
+
   init_files();
   for (all_directories_type::iterator iter = all_directories.begin(); iter != all_directories.end(); ++iter)
   {
@@ -5208,16 +5294,16 @@ void show_hardlinks(void)
       for (std::vector<path_to_inode_map_type::iterator>::iterator iter3 = iter->second.begin(); iter3 != iter->second.end(); ++iter3)
       {
 	std::string::size_type slash = (*iter3)->first.find_last_of('/');
-	assert(slash != std::string::npos);
+	ASSERT(slash != std::string::npos);
 	std::string dirname = (*iter3)->first.substr(0, slash);
         all_directories_type::iterator iter5 = all_directories.find(dirname);
-	assert(iter5 != all_directories.end());
+	ASSERT(iter5 != all_directories.end());
         std::cout << "  " << (*iter3)->first << " (" << iter5->second.inode_number() << ")\n";
       }
 #if 0
       // Try to figure out which directory it belongs to.
       inode_to_dir_entry_type::iterator iter2 = inode_to_dir_entry.find(iter->first);
-      assert(iter2 != inode_to_dir_entry.end());
+      ASSERT(iter2 != inode_to_dir_entry.end());
       Inode inode;
       int sequence;
       get_undeleted_inode_type res = get_undeleted_inode(iter->first, inode, &sequence);
@@ -5237,9 +5323,9 @@ void show_hardlinks(void)
 	  int dirblocknr = dir_entry.M_directory_iterator->block();
 	  int group = block_to_group(super_block, dirblocknr);;
 	  unsigned int bit = dirblocknr - first_data_block(super_block) - group * blocks_per_group(super_block);
-	  assert(bit < 8U * block_size_);
+	  ASSERT(bit < 8U * block_size_);
 	  struct bitmap_ptr bmp = get_bitmap_mask(bit);
-	  assert(block_bitmap[group]);
+	  ASSERT(block_bitmap[group]);
 	  bool allocated = (block_bitmap[group][bmp.index] & bmp.mask);
 	  if (allocated)
 	    std::cout << "ok: " << dir_entry.M_directory->inode_number() << '/' << dir_entry.M_name << '\n';
@@ -5275,7 +5361,7 @@ void restore_file_action(int blocknr, void* ptr)
   get_block(blocknr, block_buf);
   int len = std::min(data.remaining_size, block_size_);
   data.out.write((char const*)block_buf, len);
-  assert(data.out.good());
+  ASSERT(data.out.good());
   data.remaining_size -= len;
 }
 
@@ -5336,8 +5422,8 @@ char const* mode_str(int16_t i_mode)
 
 void restore_file(std::string const& outfile)
 {
-  assert(!outfile.empty());
-  assert(outfile[0] != '/');
+  ASSERT(!outfile.empty());
+  ASSERT(outfile[0] != '/');
   init_files();
   int inodenr;
   path_to_inode_map_type::iterator inode_iter = path_to_inode_map.find(outfile);
@@ -5410,7 +5496,7 @@ void restore_file(std::string const& outfile)
         std::cout << "Not undeleting \"" << outfile << "\" because it was deleted before " << commandline_after << " (" << inode.ctime() << ")\n";
       return;
     }
-    assert(inode.dtime() == 0);
+    ASSERT(inode.dtime() == 0);
     if (is_regular_file(inode))
     {
       std::ofstream out;
@@ -5423,7 +5509,7 @@ void restore_file(std::string const& outfile)
       Data data(out, inode.size());
       std::cout << "Restoring " << outfile << '\n';
       bool reused_or_corrupted_indirect_block8 = iterate_over_all_blocks_of(inode, restore_file_action, &data);
-      assert(out.good());
+      ASSERT(out.good());
       out.close();
       if (reused_or_corrupted_indirect_block8)
       {

@@ -1,6 +1,8 @@
 ext3grep-?
 
 	Print version as first output line.
+	If configure with libcwd, add --debug and --debug-malloc commandline options.
+	asserts now print a backtrace.
 
 ext3grep-0.3.1
 

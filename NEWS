@@ -1,6 +1,7 @@
 ext3grep-?
 
 	Print version as first output line.
+	Print more human readable errors if opening of device fails.
 	If configure with libcwd, add --debug and --debug-malloc commandline options.
 	asserts now print a backtrace.
 

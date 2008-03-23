@@ -1665,9 +1665,36 @@ int main(int argc, char* argv[])
 
   decode_commandline_options(argc, argv);
 
+  // Sanity checks on the user.
+
+  if (argc != 1)
+  {
+    if (argc == 0)
+      std::cerr << progname << ": Missing device name. Use --help for a usage message." << std::endl;
+    else
+      std::cerr << progname << ": Too many non-options. Use --help for a usage message." << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  struct stat statbuf;
+  if (stat(*argv, &statbuf) == -1)
+  {
+    int error = errno;
+    std::cout << std::flush;
+    std::cerr << progname << ": stat \"" << *argv << "\": " << strerror(error) << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if (S_ISDIR(statbuf.st_mode))
+  {
+    std::cerr << progname << ": \"" << *argv << "\" is a directory. You need to use the raw ext3 filesystem device (or a copy thereof)." << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if (!S_ISBLK(statbuf.st_mode) && statbuf.st_size < SUPER_BLOCK_OFFSET + 1024)
+  {
+    std::cerr << progname << ": \"" << *argv << "\" is not an ext3 fs; it's WAY too small (" << statbuf.st_size << " bytes)." << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
   // Open the device.
-  assert(argc == 1);
-  device_name = *argv;
   device.open(*argv);
   if (!device.good())
   {
@@ -1692,11 +1719,25 @@ int main(int argc, char* argv[])
   // The size of a super block is 1024 bytes.
   assert(sizeof(ext3_super_block) == 1024);
   device.seekg(SUPER_BLOCK_OFFSET);
-  assert(device.good());
+  if (!device.good())
+  {
+    int error = errno;
+    std::cout << std::flush;
+    std::cerr << progname << ": failed to seek to position " << SUPER_BLOCK_OFFSET << " of \"" << *argv << "\": " << strerror(error) << std::endl;
+    exit(EXIT_FAILURE);
+  }
   device.read(reinterpret_cast<char*>(&super_block), sizeof(ext3_super_block));
-  assert(device.good());
+  if (!device.good())
+  {
+    int error = errno;
+    std::cout << std::flush;
+    std::cerr << progname << ": failed to read first superblock from \"" << *argv << "\": " << strerror(error) << std::endl;
+    exit(EXIT_FAILURE);
+  }
 
+  // Initialize global constants.
   init_consts();
+  device_name = *argv;
 
   try
   {

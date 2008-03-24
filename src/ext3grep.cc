@@ -207,9 +207,9 @@ struct Parent;
 class DirectoryBlockStats;
 
 static void decode_commandline_options(int& argc, char**& argv);
-static void dump_hex(unsigned char const* buf, size_t size);
-static void print_block(unsigned char* block);
-static void print_inode(Inode& inode);
+static void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size);
+static void print_block_to(std::ostream& os, unsigned char* block);
+static void print_inode_to(std::ostream&, Inode& inode);
 static void iterate_over_directory(unsigned char* block, int blocknr,
     bool (*action)(ext3_dir_entry_2 const&, Inode&, bool, bool, bool, bool, bool, bool, Parent*, void*), Parent* parent, void* data);
 static void iterate_over_directory_action(int blocknr, void* data);
@@ -1186,8 +1186,8 @@ void run_program(void)
     if (commandline_print)
     {
       std::cout << "\nHex dump of inode " << commandline_inode << ":\n";
-      dump_hex((unsigned char*)&inode, inode_size_);
-      std::cout << std::dec << '\n';
+      dump_hex_to(std::cout, (unsigned char*)&inode, inode_size_);
+      std::cout << '\n';
     }
     unsigned int bit = commandline_inode - 1 - commandline_group * inodes_per_group_;
     ASSERT(bit < 8U * block_size_);
@@ -1200,7 +1200,7 @@ void run_program(void)
     if (commandline_print)
     {
       std::cout << "Group: " << commandline_group << '\n';
-      print_inode(inode);
+      print_inode_to(std::cout, inode);
     }
     if (is_directory(inode))
       print_directory_inode(commandline_inode);
@@ -1228,7 +1228,7 @@ void run_program(void)
       if (commandline_print)
       {
 	std::cout << "Hex dump of block " << commandline_block << ":\n";
-	print_block(block);
+	print_block_to(std::cout, block);
 	std::cout << '\n';
       }
       std::cout << "Group: " << commandline_group << '\n';
@@ -1306,7 +1306,7 @@ void run_program(void)
 		    inode = reinterpret_cast<Inode*>(reinterpret_cast<unsigned char*>(inode) + inode_size_), ++inodenr)
 		{
 		  std::cout << "\n--------------Inode " << inodenr << "-----------------------\n";
-		  print_inode(*inode);
+		  print_inode_to(std::cout, *inode);
 	        }
 	      }
 	    }
@@ -2479,29 +2479,30 @@ static void decode_commandline_options(int& argc, char**& argv)
 
 //-----------------------------------------------------------------------------
 //
-// dump_hex
+// dump_hex_to
 //
 
-static void dump_hex(unsigned char const* buf, size_t size)
+static void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size)
 {
   for (size_t addr = 0; addr < size; addr += 16)
   {
-    std::cout << std::hex << std::setfill('0') << std::setw(4) << addr << " |";
+    os << std::hex << std::setfill('0') << std::setw(4) << addr << " |";
     int offset;
     for (offset = 0; offset < 16 && addr + offset < size; ++offset)
-      std::cout << ' ' << std::hex << std::setfill('0') << std::setw(2) << (int)buf[addr + offset];
+      os << ' ' << std::hex << std::setfill('0') << std::setw(2) << (int)buf[addr + offset];
     for (; offset < 16; ++offset)
-      std::cout << "   ";
-    std::cout << " | ";
+      os << "   ";
+    os << " | ";
     for (int offset = 0; offset < 16 && addr + offset < size; ++offset)
     {
       unsigned char c = buf[addr + offset];
       if (!std::isprint(c))
 	c = '.';
-      std::cout << c;
+      os << c;
     }
-    std::cout << '\n';
+    os << '\n';
   }
+  os << std::dec;
 }
 
 //-----------------------------------------------------------------------------
@@ -2509,10 +2510,9 @@ static void dump_hex(unsigned char const* buf, size_t size)
 // Printing
 //
 
-static void print_block(unsigned char* block)
+static void print_block_to(std::ostream& os, unsigned char* block)
 {
-  dump_hex(block, block_size_);
-  std::cout << std::dec;
+  dump_hex_to(os, block, block_size_);
 }
 
 static void print_restrictions(void)
@@ -2601,9 +2601,9 @@ static int mode_map[8] = {
    0xA000  // EXT3_FT_SYMLINK
 };
 
-static void print_inode(Inode& inode)
+static void print_inode_to(std::ostream& os, Inode& inode)
 {
-  std::cout << "Generation Id: " << inode.generation() << '\n';
+  os << "Generation Id: " << inode.generation() << '\n';
   union {
     uid_t uid;
     uint16_t uid_word[2];
@@ -2616,11 +2616,11 @@ static void print_inode(Inode& inode)
   };
   gid_word[0] = inode.gid_low();
   gid_word[1] = inode.gid_high();
-  std::cout << "uid / gid: " << uid << " / " << gid << '\n';
-  std::cout << "mode: " << FileMode(inode.mode()) << '\n';
-  std::cout << "size: " << inode.size() << '\n';
-  std::cout << "num of links: " << inode.links_count() << '\n';
-  std::cout << "sectors: " << inode.blocks();
+  os << "uid / gid: " << uid << " / " << gid << '\n';
+  os << "mode: " << FileMode(inode.mode()) << '\n';
+  os << "size: " << inode.size() << '\n';
+  os << "num of links: " << inode.links_count() << '\n';
+  os << "sectors: " << inode.blocks();
   // A sector is 512 bytes. Therefore, we are using 'inode.i_blocks * 512 / block_size_' blocks.
   // 'inode.i_size / block_size_' blocks are used for the content, thus
   // '(inode.i_blocks * 512 - inode.i_size) / block_size_' blocks should
@@ -2628,59 +2628,59 @@ static void print_inode(Inode& inode)
   if ((inode.mode() & 0xf000) != 0xa000 || inode.blocks() != 0)		// Not an inline symlink?
   {
     int number_of_indirect_blocks = (inode.blocks() * 512 - inode.size()) / block_size_;
-    std::cout << " (--> " << number_of_indirect_blocks << " indirect " << ((number_of_indirect_blocks == 1) ? "block" : "blocks") << ").\n";
+    os << " (--> " << number_of_indirect_blocks << " indirect " << ((number_of_indirect_blocks == 1) ? "block" : "blocks") << ").\n";
   }
   time_t atime = inode.atime();
-  std::cout << "\nInode Times:\n";
-  std::cout << "Accessed:       ";
+  os << "\nInode Times:\n";
+  os << "Accessed:       ";
   if (atime > 0)
-    std::cout << atime << " = " << std::ctime(&atime);
+    os << atime << " = " << std::ctime(&atime);
   else
-    std::cout << "0\n";
+    os << "0\n";
   time_t ctime = inode.ctime();
-  std::cout << "File Modified:  ";
+  os << "File Modified:  ";
   if (ctime > 0)
-    std::cout << ctime << " = " << std::ctime(&ctime);
+    os << ctime << " = " << std::ctime(&ctime);
   else
-    std::cout << "0\n";
+    os << "0\n";
   time_t mtime = inode.mtime();
-  std::cout << "Inode Modified: ";
+  os << "Inode Modified: ";
   if (mtime > 0)
-    std::cout << mtime << " = " << std::ctime(&mtime);
+    os << mtime << " = " << std::ctime(&mtime);
   else
-    std::cout << "0\n";
+    os << "0\n";
   time_t dtime = inode.dtime();
-  std::cout << "Deletion time:  ";
+  os << "Deletion time:  ";
   if (dtime > 0)
-    std::cout << dtime << " = " << std::ctime(&dtime);
+    os << dtime << " = " << std::ctime(&dtime);
   else
-    std::cout << "0\n";
-  //std::cout << "File flags: " << inode.flags() << '\n';
+    os << "0\n";
+  //os << "File flags: " << inode.flags() << '\n';
   if ((inode.mode() & 0xf000) != 0xa000 || inode.blocks() != 0)		// Not an inline symlink?
   {
-    std::cout << "\nDirect Blocks:";
+    os << "\nDirect Blocks:";
     for (int n = 0; n < EXT3_NDIR_BLOCKS; ++n)
       if (inode.block()[n])
-	std::cout << ' ' << inode.block()[n];
-    std::cout << '\n';
+	os << ' ' << inode.block()[n];
+    os << '\n';
     if (inode.block()[EXT3_IND_BLOCK])
-      std::cout << "Indirect Block: " << inode.block()[EXT3_IND_BLOCK] << '\n';
+      os << "Indirect Block: " << inode.block()[EXT3_IND_BLOCK] << '\n';
     if (inode.block()[EXT3_DIND_BLOCK])
-      std::cout << "Double Indirect Block: " << inode.block()[EXT3_DIND_BLOCK] << '\n';
+      os << "Double Indirect Block: " << inode.block()[EXT3_DIND_BLOCK] << '\n';
     if (inode.block()[EXT3_TIND_BLOCK])
-      std::cout << "Tripple Indirect Block: " << inode.block()[EXT3_TIND_BLOCK] << '\n';
+      os << "Tripple Indirect Block: " << inode.block()[EXT3_TIND_BLOCK] << '\n';
   }
   else
   {
-    std::cout << "Symbolic link target name: ";
-    print_symlink(std::cout, inode);
-    std::cout << '\n';
+    os << "Symbolic link target name: ";
+    print_symlink(os, inode);
+    os << '\n';
   }
-  //std::cout << "File ACL: " << inode.file_acl() << '\n';
-  //std::cout << "Directory ACL: " << inode.dir_acl() << '\n';
-  //std::cout << "Fragment address: " << inode.faddr() << '\n';
-  //std::cout << "Fragment number: " << (int)inode.osd2.linux2.l_i_frag << '\n';
-  //std::cout << "Fragment size: " << (int)inode.osd2.linux2.l_i_fsize << '\n';
+  //os << "File ACL: " << inode.file_acl() << '\n';
+  //os << "Directory ACL: " << inode.dir_acl() << '\n';
+  //os << "Fragment address: " << inode.faddr() << '\n';
+  //os << "Fragment number: " << (int)inode.osd2.linux2.l_i_frag << '\n';
+  //os << "Fragment size: " << (int)inode.osd2.linux2.l_i_fsize << '\n';
 }
 
 char const* dir_entry_file_type(int file_type, bool ls)
@@ -2808,7 +2808,7 @@ bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode& inode
     else
     {
       std::cout << "\nInode:\n";
-      print_inode(inode);
+      print_inode_to(std::cout, inode);
     }
     if (zero_inode && linked)
       std::cout << "The directory entry is linked but has a zero inode. This needs to be fixed!\n";
@@ -4273,7 +4273,18 @@ void init_dir_inode_to_block_cache(void)
 	if (bv.empty())
 	{
 	  std::cout << std::flush;
+	  std::cerr << "---- Mail this to the mailinglist -------------------------------\n";
 	  std::cerr << "WARNING: inode " << i << " is an allocated inode without directory block pointing to it!" << std::endl;
+	  std::cerr << "         Inode " << i << ":";
+	  print_inode_to(std::cerr, inode);
+	  DirectoryBlockStats stats;
+	  unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
+          get_block(first_block, block_buf);
+	  is_directory_type isdir = is_directory(block_buf, first_block, stats, false);
+	  std::cerr << "         is_directory(" << first_block << ") returns " << isdir << '\n';
+	  std::cerr << "         Hex dump:\n";
+          print_block_to(std::cerr, block_buf); 
+	  std::cerr << "-----------------------------------------------------------------\n";
 	  continue;
 	}
 	int count = 0;
@@ -4846,6 +4857,11 @@ void init_directories(void)
     {
       cache << iter->first << " '" << iter->second->first << "'";
       Directory& directory(iter->second->second);
+      if (directory.inode_number() != iter->first)
+      {
+        std::cerr << "ERROR: inode_to_directory entry with inode number " << iter->first <<
+	    " points to a Directory with inode number " << directory.inode_number() << " (path \"" << iter->second->first << "\")." << std::endl; 
+      }
       ASSERT(directory.inode_number() == iter->first);
       for (std::list<DirectoryBlock>::iterator iter2 = directory.blocks().begin(); iter2 != directory.blocks().end(); ++iter2)
         cache << ' ' << iter2->block();
@@ -5256,7 +5272,7 @@ static void show_journal_inodes(int inodenr)
     {
       last_mtime = inode.mtime();
       std::cout << "\n--------------Inode " << inodenr << "-----------------------\n";
-      print_inode(inode);
+      print_inode_to(std::cout, inode);
     }
   }
 }

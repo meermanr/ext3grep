@@ -4566,6 +4566,11 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
     }
     std::cout << "Directory " << parent->dirname(commandline_show_path_inodes) << " is linked to both inode/block " << inode_number << '/' << first_block <<
 	" as well as " << res.first->second.inode_number() << '/' << res.first->second.first_block() << "!\n";
+    // If we don't do anything here, the assertion `directory.inode_number() == iter->first' in init_directories() will fail.
+    // See http://groups.google.com/group/ext3grep/browse_thread/thread/38bbcc9bba214240/987815a7bba17190?hl=en#987815a7bba17190
+    
+    // Consistency check:
+    ASSERT(inode_number == res.first->second.inode_number());
   }
   std::pair<inode_to_directory_type::iterator, bool> res2 =
       inode_to_directory.insert(inode_to_directory_type::value_type(inode_number, res.first));

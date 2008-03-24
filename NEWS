@@ -3,7 +3,11 @@ ext3grep-?
 	Print version as first output line.
 	Print more human readable errors if opening of device fails.
 	If configure with libcwd, add --debug and --debug-malloc commandline options.
-	asserts now print a backtrace.
+	Asserts now print a backtrace.
+	Use EXT3_ROOT_INO instead of 2.
+	Make --enable-debug the default.
+        Demand --enable-maintainer-mode to be used with svn.
+	Append '# END' to the end of the stage2 file, and test for it when reading it.
 
 ext3grep-0.3.1
 

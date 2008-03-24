@@ -41,6 +41,9 @@ AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_CXXCPP
 
+dnl Make these two the default until ext3grep is stable.
+enable_optimize=no
+enable_debug=yes
 dnl Add --enable-debug (DEBUG, DOXYGEN_DEBUG), --enable-libcwd (CWDEBUG, DOXYGEN_CWDEBUG),
 dnl --enable-optimise and --enable-profile options. Update USE_LIBCWD, CWD_LIBS and CXXFLAGS accordingly.
 CW_OPG_FLAGS([-W -Wall -Woverloaded-virtual -Wundef -Wpointer-arith -Wwrite-strings -Winline])
@@ -64,6 +67,9 @@ AC_SUBST(DEFS)
 
 dnl Test if we are checked out by svn.
 if test -d "$srcdir/.svn"; then
+  if test x"$enable_maintainer_mode" != x"yes"; then
+    AC_MSG_ERROR([Always use --enable-maintainer-mode if you are using SVN.])
+  fi
   AC_DEFINE_UNQUOTED([USE_SVN], 1, [Define when this project is checked out using svn.])
 fi
 AM_CONDITIONAL([USE_SVN], [test -d "$srcdir/.svn"])
@@ -77,7 +83,7 @@ AM_CONDITIONAL([USE_CWDEBUG], [test x"$cw_used_libcwd" = x"yes"])
 dnl Checks for other programs.
 AC_PROG_INSTALL
 
-dnl Include support for 64 file offsets if supported.
+dnl Include support for 64-bit file offsets if supported.
 AC_SYS_LARGEFILE
 
 dnl Include flags needed for the e2progs header files.

@@ -12,5 +12,7 @@ If you checked out this directory with svn, then you will need to execute:
 
 You only need to do this once. After that please read INSTALL.
 
-You should use --enable-maintainer-mode with configure if you checked out
-the source code with svn.
+You must use --enable-maintainer-mode with configure if you checked out
+the source code with svn (otherwise certain changes will not regenerate
+generated files and you'd have to re-run ./autogen.sh every time you
+updated).

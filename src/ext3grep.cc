@@ -4333,8 +4333,11 @@ void init_dir_inode_to_block_cache(void)
           get_block(first_block, block_buf);
 	  is_directory_type isdir = is_directory(block_buf, first_block, stats, false);
 	  std::cerr << "         is_directory(" << first_block << ") returns " << isdir << '\n';
-	  std::cerr << "         Hex dump:\n";
-          print_block_to(std::cerr, block_buf); 
+	  if (isdir == isdir_no)
+	  {
+	    std::cerr << "         Hex dump:\n";
+	    print_block_to(std::cerr, block_buf); 
+	  }
 	  std::cerr << "-----------------------------------------------------------------\n";
 	  continue;
 	}

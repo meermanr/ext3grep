@@ -907,7 +907,7 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
       accepted_filenames.insert(accept);
       std::cout << std::flush;
       if (certainly_linked)
-	std::cerr << "\nWARNING: Rejecting possible directory (block " << blocknr << ") because an entry contains legal but unlikely characters.\n'";
+	std::cerr << "\nWARNING: Rejecting possible directory (block " << blocknr << ") because an entry contains legal but unlikely characters.\n";
       else // Aparently we're looking for deleted entries.
 	std::cerr << "\nWARNING: Rejecting a dir_entry (block " << blocknr << ") because it contains legal but unlikely characters.\n";
       std::cerr     << "         Use --ls --block " << blocknr << " to examine this possible directory block.\n";

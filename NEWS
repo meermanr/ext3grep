@@ -1,5 +1,6 @@
-ext3grep-?
+ext3grep-0.4.0
 
+	Address the problem where two dir entries have the same name but different inode numbers.
 	Print version as first output line.
 	Print more human readable errors if opening of device fails.
 	If configure with libcwd, add --debug and --debug-malloc commandline options.

@@ -245,6 +245,7 @@ static void show_journal_inodes(int inode);
 static void restore_file(std::string const& outfile);
 static void show_hardlinks(void);
 static void init_accept(void);
+static int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int directory_block_number);
 
 // Frequently used constant values from the superblock.
 ext3_super_block super_block;
@@ -4000,6 +4001,56 @@ void get_inodes_from_journal(int inode, std::vector<std::pair<int, Inode> >& ino
   }
 }
 
+struct inode_refers_to_st
+{
+  int block_number;
+  bool found;
+};
+
+void inode_refers_to_action(int blocknr, void* ptr)
+{
+  inode_refers_to_st& data(*reinterpret_cast<inode_refers_to_st*>(ptr));
+  if (blocknr == data.block_number)
+    data.found = true;
+}
+
+bool inode_refers_to(Inode& inode, int block_number)
+{
+  inode_refers_to_st data;
+  data.block_number = block_number;
+  data.found = false;
+  bool reused_or_corrupted_indirect_block9 = iterate_over_all_blocks_of(inode, inode_refers_to_action, &data);
+  if (data.found)
+    return true;
+  if (reused_or_corrupted_indirect_block9)
+    std::cout << "WARNING: Could not verify if inode refers to block " << block_number <<
+        " : encountered a reused or corrupted (double/triple) indirect block!\n";
+  return false;
+}
+
+// Return std::numeric_limits<int>::max() if the inode is still allocated
+// and refering to the given block, otherwise return the Journal sequence
+// number that contains the last copy of an undeleted inode that refers
+// to the given block, or return 0 if none could be found.
+int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int directory_block_number)
+{
+  if (is_allocated(inode_number))
+  {
+    Inode& real_inode = get_inode(inode_number);
+    if (is_directory(real_inode) && inode_refers_to(real_inode, directory_block_number))
+      return std::numeric_limits<int>::max();
+  }
+  // Get sequence/Inode pairs from the Journal.
+  std::vector<std::pair<int, Inode> > inodes;
+  get_inodes_from_journal(inode_number, inodes);
+  // This runs from high to low sequence numbers, so we'll find the highest matching sequence number.
+  for (std::vector<std::pair<int, Inode> >::iterator iter = inodes.begin(); iter != inodes.end(); ++iter)
+    if (is_directory(iter->second) && inode_refers_to(iter->second, directory_block_number))
+      return iter->first;
+  // Nothing found.
+  return 0;
+}
+
 //-----------------------------------------------------------------------------
 //
 // dir_inode_to_block
@@ -4564,11 +4615,56 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
       //std::cout << "Aborting recursion of " << parent->dirname(commandline_show_path_inodes) << '\n';
       return true;	// Abort recursion.
     }
-    std::cout << "Directory " << parent->dirname(commandline_show_path_inodes) << " is linked to both inode/block " << inode_number << '/' << first_block <<
-	" as well as " << res.first->second.inode_number() << '/' << res.first->second.first_block() << "!\n";
+    std::cout << "Directory \"" << parent->dirname(commandline_show_path_inodes) << "\" is linked to both inode/block " <<
+        inode_number << '/' << first_block << " as well as " << res.first->second.inode_number() << '/' << res.first->second.first_block() << "\n";
     // If we don't do anything here, the assertion `directory.inode_number() == iter->first' in init_directories() will fail.
     // See http://groups.google.com/group/ext3grep/browse_thread/thread/38bbcc9bba214240/987815a7bba17190?hl=en#987815a7bba17190
     
+    // Lets call inode_number/first_block 'new', and inode_number()/first_block() 'old'.
+    int sequence_number_new = last_undeleted_directory_inode_refering_to_block(inode_number, first_block);
+    int sequence_number_old = last_undeleted_directory_inode_refering_to_block(res.first->second.inode_number(), res.first->second.first_block());
+    
+    if (sequence_number_new == sequence_number_old)
+    {
+      std::cout << std::endl;
+      std::cerr << "WARNING: ext3grep currently does not support this situation:\n";
+      std::cerr << "         last_undeleted_directory_inode_refering_to_block(" << inode_number << ", " << first_block << ") = " << sequence_number_new << '\n';
+      std::cerr << "         last_undeleted_directory_inode_refering_to_block(" << res.first->second.inode_number() << ", " << res.first->second.first_block() << ") = " << sequence_number_old << '\n';
+      std::cerr << "Since most people don't like it if ext3grep aborts; we'll randomly pick one of them. It could be the WRONG one though." << std::endl;
+      sequence_number_new = 0;	// Drop the new one.
+    }
+
+    if (sequence_number_new > sequence_number_old)
+    {
+      // The new inode/block pair is newer, therefore we keep 'inode_number' and replace all_directories element.
+      std::cout << "Replacing " << res.first->second.inode_number() << '/' << res.first->second.first_block() <<
+          " (sequence " << sequence_number_old << ") with " << inode_number << '/' << first_block;
+      if (sequence_number_new == std::numeric_limits<int>::max())
+	std::cout << " (allocated";
+      else
+	std::cout << " (sequence " << sequence_number_new;
+      std::cout << ").\n";
+      inode_to_directory_type::iterator iter = inode_to_directory.find(res.first->second.inode_number());
+      ASSERT(iter != inode_to_directory.end());
+      inode_to_directory.erase(iter);
+      all_directories.erase(res.first);
+      res = all_directories.insert(all_directories_type::value_type(parent->dirname(false), Directory(inode_number, first_block)));
+      ASSERT(res.second);
+    }
+    else
+    {
+      // The old inode/block pair is newer, therefore we keep the all_directories element
+      // and do not insert the new inode in inode_to_directory. Moreover, we consider
+      // the current directory block to unusable, so we abort recursion of it.
+      std::cout << "Keeping " << res.first->second.inode_number() << '/' << res.first->second.first_block();
+      if (sequence_number_old == std::numeric_limits<int>::max())
+        std::cout << " (allocated";
+      else
+	std::cout << " (sequence " << sequence_number_old;
+      std::cout << ") over " << inode_number << '/' << first_block << " (sequence " << sequence_number_new << ").\n";
+      return true;	// Abort recursion.
+    }
+
     // Consistency check:
     ASSERT(inode_number == res.first->second.inode_number());
   }

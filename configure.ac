@@ -6,7 +6,7 @@ dnl CW_VERSION_REVISION            : Increment every public release; or set to 0
 
 define(CW_VERSION_MAJOR, 0)
 define(CW_VERSION_MINOR, 4)
-define(CW_VERSION_REVISION, 0)
+define(CW_VERSION_REVISION, 1)
 
 define(CW_PACKAGE_NAME, [ext3grep])
 define(CW_BUGREPORT, [carlo@alinoe.com])

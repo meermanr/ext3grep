@@ -648,7 +648,11 @@ unsigned char someones_block[4096] = {
   0
 };
 #endif
-#endif	// EXTERNAL_BLOCK
+#else	// !EXTERNAL_BLOCK
+// Not used, except in compiler check.
+uint32_t someones_inode_count;
+unsigned char someones_block[1];
+#endif	// !EXTERNAL_BLOCK
 
 //-----------------------------------------------------------------------------
 //

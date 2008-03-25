@@ -1078,7 +1078,7 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
       std::cerr     << "         Use --ls --block " << blocknr << " to examine this possible directory block.\n";
       std::cerr     << "         If it looks like a directory to you, and '" << escaped_name.str() << "'\n";
       std::cerr     << "         looks like a filename that might belong in that directory, then add\n";
-      std::cerr     << "         --accept='" << escaped_name.str() << "' as commandline parameter." << std::endl;
+      std::cerr     << "         --accept='" << escaped_name.str() << "' as commandline parameter AND remove both stage* files!" << std::endl;
     }
   }
   if (ok)
@@ -2290,8 +2290,9 @@ static void print_usage(std::ostream& os)
   os << "  --print                Print content of block or inode, if any.\n";
   os << "  --ls                   Print directories with only one line per entry.\n";
   os << "                         This option is often needed to turn on filtering.\n";
-  os << "  --accept filen         Accept 'filen' as a legal filename.\n";
-  os << "                         Can be used multiple times.\n";
+  os << "  --accept filen         Accept 'filen' as a legal filename. Can be used multi-\n";
+  os << "                         ple times. If you change any --accept you must remove\n";
+  os << "                         BOTH stage* files!\n";
   os << "  --journal              Show content of journal.\n";
   os << "  --show-path-inodes     Show the inode of each directory component in paths.\n";
 #ifdef CWDEBUG

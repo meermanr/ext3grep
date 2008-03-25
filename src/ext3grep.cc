@@ -446,7 +446,7 @@ enum filename_char_type {
   fnct_ok,
   fnct_illegal,
   fnct_unlikely,
-  fnct_unprintable
+  fnct_non_ascii
 };
 
 inline filename_char_type is_filename_char(__s8 c)
@@ -466,10 +466,10 @@ inline filename_char_type is_filename_char(__s8 c)
   };
   // These characters are legal, but very unlikely.
   // Don't reject them when a specific block was requested.
-  if (commandline_block == -1 && !((c > 31 && c != 127) || (unsigned char)c > 159))
-    return fnct_unprintable;
-  // These characters are legal, but unlikely.
-  if (commandline_block == -1 && (c < 32 || c > 126 || hit[c - 32]))
+  if (c < 32 || c == 127)
+    return fnct_non_ascii;
+  // These characters are legal ASCII, but unlikely.
+  if (hit[c - 32])
     return fnct_unlikely;
   return fnct_ok;
 }
@@ -531,7 +531,7 @@ void init_accept(void)
         Accept::S_illegal.set(i);
         break;
       case fnct_unlikely:
-      case fnct_unprintable:
+      case fnct_non_ascii:
         Accept::S_unlikely.set(i);
         break;
     }
@@ -718,7 +718,7 @@ struct DelayedWarning {
   std::ostream& stream(void) { init(); return *delayed_warning; }
 };
 
-// Print string, escaping unprintable characters.
+// Print string, escaping non ASCII characters.
 void print_buf_to(std::ostream& os, char const* buf, int len)
 {
   for (int i = 0; i < len; ++i)
@@ -807,14 +807,14 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
   if (dir_entry->inode == 0 && dir_entry->name_len > 0)
   {
     // If the inode is zero and the filename makes no sense, reject the directory.
-    bool unprintable = false;
+    bool non_ascii = false;
     for (int c = 0; c < dir_entry->name_len; ++c)
     {
       filename_char_type result = is_filename_char(dir_entry->name[c]);
       if (result == fnct_illegal)
 	return isdir_no;
-      if (result == fnct_unprintable)
-	unprintable = true;
+      if (result == fnct_non_ascii)
+	non_ascii = true;
     }
     // If the inode is zero, but the filename makes sense, print a warning
     // only when the inode really wasn't expected to be zero. Do not reject
@@ -822,8 +822,8 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
     if (certainly_linked && (offset != 0 || start_block))
     {
       delayed_warning.stream() << "WARNING: zero inode (name: ";
-      if (unprintable)
-        delayed_warning.stream() << "*contains unprintable characters* ";
+      if (non_ascii)
+        delayed_warning.stream() << "*contains non-ASCII characters* ";
       delayed_warning.stream() << "\"";
       print_buf_to(delayed_warning.stream(), dir_entry->name, dir_entry->name_len);
       delayed_warning.stream() << "\"; block: " << blocknr << "; offset 0x" << std::hex << offset << std::dec << ")\n";
@@ -856,9 +856,11 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
   bool ok = true;
   int number_of_weird_characters = 0;
   for (int c = 0; c < dir_entry->name_len; ++c)
-    if (is_filename_char(dir_entry->name[c]) != fnct_ok)
+  {
+    filename_char_type fnct = is_filename_char(dir_entry->name[c]);
+    if (fnct != fnct_ok)
     {
-      if (is_filename_char(dir_entry->name[c]) == fnct_illegal)
+      if (fnct == fnct_illegal)
       {
         ok = false;
         illegal = true;
@@ -867,6 +869,10 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
       ++number_of_weird_characters;
       stats.increment_unlikely_character_count(dir_entry->name[c]);
     }
+  }
+  // If the user asks for a specific block, don't suppress anything.
+  if (commandline_block != -1)
+    number_of_weird_characters = 0;
 #if 1
   // New code... just accept everything at this point, except filenames existing of a single unlikely character.
   if (dir_entry->name_len == 1 && number_of_weird_characters > 0)
@@ -1340,7 +1346,6 @@ void run_program(void)
       unsigned char* block = new unsigned char[block_size_];    
       if (EXTERNAL_BLOCK && commandline_block == 0)
       {
-	Debug(attach_gdb());
 	assert(block_size_ == sizeof(someones_block));
 	std::memcpy(block, someones_block, block_size_);
 	DirectoryBlockStats stats;
@@ -2927,7 +2932,24 @@ bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode& inode
   std::cout << "Name length: " << (int)dir_entry.name_len << '\n';
   if (feature_incompat_filetype)
     std::cout << "File type: " << dir_entry_file_type(dir_entry.file_type, false);
-  std::cout << "\nFile name: \"" << std::string(dir_entry.name, dir_entry.name_len) << "\"\n";
+  int number_of_weird_characters = 0;
+  for (int c = 0; c < dir_entry.name_len; ++c)
+  {
+    filename_char_type fnct = is_filename_char(dir_entry.name[c]);
+    if (fnct != fnct_ok)
+    {
+      ASSERT(fnct != fnct_illegal);
+      ++number_of_weird_characters;
+    }
+  }
+  if (number_of_weird_characters < 4 && number_of_weird_characters < dir_entry.name_len)
+    std::cout << "\nFile name: \"" << std::string(dir_entry.name, dir_entry.name_len) << "\"\n";
+  if (number_of_weird_characters > 0)
+  {
+    std::cout << "\nEscaped file name: \"";
+    print_buf_to(std::cout, dir_entry.name, dir_entry.name_len);
+    std::cout << "\"\n";
+  }
   if (!reallocated && !zero_inode && feature_incompat_filetype && (dir_entry.file_type & 7) == EXT3_FT_SYMLINK)
   {
     std::cout << "Symbolic link to: ";

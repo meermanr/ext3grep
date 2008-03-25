@@ -6,7 +6,7 @@ dnl CW_VERSION_REVISION            : Increment every public release; or set to 0
 
 define(CW_VERSION_MAJOR, 0)
 define(CW_VERSION_MINOR, 4)
-define(CW_VERSION_REVISION, 1)
+define(CW_VERSION_REVISION, 2)
 
 define(CW_PACKAGE_NAME, [ext3grep])
 define(CW_BUGREPORT, [carlo@alinoe.com])
@@ -103,6 +103,10 @@ CXX_FINGER_PRINT="$cw_prog_cxx_finger_print"
 AC_SUBST([CXX_FINGER_PRINT])
 CXXCPP_FINGER_PRINT="$cw_prog_cxxcpp_finger_print"
 AC_SUBST([CXXCPP_FINGER_PRINT])
+
+dnl Use in sys.h to force recompilation when CXXFLAGS change.
+CXXFLAGS_FINGER_PRINT=[$(echo $CXXFLAGS | sed -e 's/-W[a-z-]* *//g')]
+AC_SUBST([CXXFLAGS_FINGER_PRINT])
 
 dnl Generate src/sys.h from src/sys.h.in
 CW_CONFIG_FILE([src], [sys.h])

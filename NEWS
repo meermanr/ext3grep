@@ -1,3 +1,7 @@
+ext3grep-0.4.2
+
+        Force recompile if CXXFLAGS changes.
+
 ext3grep-0.4.1
 
 	Fix compile problem with EXTERNAL_BLOCK=0

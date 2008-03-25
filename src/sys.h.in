@@ -50,5 +50,8 @@
 //
 // Also cause a full recompile when the definition of CWDEBUG is changed.
 // CWDEBUG: @USE_LIBCWD@
+//
+// Also cause a full recompile if CXXFLAGS is changed.
+// CXXFLAGS: @CXXFLAGS_FINGER_PRINT@
 
 #endif // SYS_H

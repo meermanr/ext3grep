@@ -724,7 +724,7 @@ void print_buf_to(std::ostream& os, char const* buf, int len)
   for (int i = 0; i < len; ++i)
   {
     __s8 c = buf[i];
-    if ((c > 31 && c != 92 && c != 127) || (unsigned char)c > 159)
+    if (c > 31 && c != 92 && c != 127)	// Only print pure ASCII (and therefore UTF8) characters.
       os.put(c);
     else
     {

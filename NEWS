@@ -8,7 +8,8 @@ ext3grep-0.4.0
 	Use EXT3_ROOT_INO instead of 2.
 	Make --enable-debug the default.
         Demand --enable-maintainer-mode to be used with svn.
-	Append '# END' to the end of the stage2 file, and test for it when reading it.
+	Append '# END' to the end of the stage1/2 files, and test for it when reading it;
+	  regenerate the cache file if it doesn't end on '# END'.
 
 ext3grep-0.3.1
 

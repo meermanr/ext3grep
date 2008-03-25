@@ -547,7 +547,7 @@ void init_accept(void)
 #endif
 
 #if EXTERNAL_BLOCK
-#if 1
+#if 0
 // Ian Jacobi's '\\' file.
 uint32_t someones_inode_count = std::numeric_limits<uint32_t>::max();
 unsigned char someones_block[4096] = {

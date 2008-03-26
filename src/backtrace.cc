@@ -35,8 +35,10 @@
 #include "sys.h"
 #include <cstdio>
 #include <iostream>
+#include <iomanip>
 #include <cstdlib>
 #include <unistd.h>
+#include "debug.h"
 #endif
 
 #include <execinfo.h>

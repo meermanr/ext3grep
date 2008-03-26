@@ -97,6 +97,9 @@ clean-local:
 if USE_PCH
 	rm -f pch.h.gch/* $(DEPDIR)/pch.*po
 endif
+if USE_SVN
+	rm -f revision.cc
+endif
 
 MAINTAINERCLEANFILES = $(srcdir)/Makefile.in tags troep* *.cgd
 

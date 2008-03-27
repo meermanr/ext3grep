@@ -1,7 +1,18 @@
 Don't expect this tool to work 100% automatically for you
 without knowing what you're doing. You might need to edit locate.cc
 
-Also, please read http://www.xs4all.nl/~carlo17/howto/undelete_ext3.html
+Please read http://www.xs4all.nl/~carlo17/howto/undelete_ext3.html
 
-Mail carlo@alinoe.com if you run into problems that you can't solve
-related to this program.
+Mailinglist
+-----------
+
+If you run into problems that you can't solve, related to this program,
+then join the Google Group 'ext3grep':
+
+http://groups.google.com/group/ext3grep
+
+Howto report a bug
+------------------
+
+http://groups.google.com/group/ext3grep/web/sticky-howto-report-a-bug
+

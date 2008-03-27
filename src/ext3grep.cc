@@ -79,16 +79,22 @@ static inline __u8 be2le(__u8 v) { return v; }
 // types therefore still needs to do the conversion.
 static inline __le32 be2le(__s32 const& v) { return be2le(*reinterpret_cast<__be32 const*>(&v)); }
 
+// Journal superblock accessor.
 int block_count(journal_superblock_t const& journal_super_block) { return be2le(journal_super_block.s_maxlen); }
 
+// A bitmap (variables ending on _bitmap) is represented as an array of bitmap_t.
+typedef unsigned long bitmap_t;
+
+// A bitmap_ptr represents a single bit in a bit map.
 struct bitmap_ptr {
-  int index;
+  int index;					// The index into the array of bitmap_t.
   union {
-    uint64_t mask;
-    unsigned char byte[8];
+    bitmap_t mask;				// The mask for that array element (a single bit).
+    unsigned char byte[sizeof(bitmap_t)];	// For byte-level access.
   };
 };
 
+// Translate 'bit' into a bitmap_ptr.
 bitmap_ptr get_bitmap_mask(unsigned int bit)
 {
   bitmap_ptr result;
@@ -100,11 +106,13 @@ bitmap_ptr get_bitmap_mask(unsigned int bit)
   // bit of the previous byte. In other words, when we read the bytes we go left to
   // right, but inside each byte we read right to left.
 
-  // Higher bit's result in higher indexes. Every 64 bit the index is incremented by one.
-  result.index = bit >> 6;
+  // Number of bits in bitmap_t.
+  static int const bitmap_t_bits = 8 * sizeof(bitmap_t);
+  // Higher bit's result in higher indexes. Every bitmap_t_bits the index is incremented by one.
+  result.index = bit / bitmap_t_bits;
   // Higher bits means higher bytes. Every 8 bit the byte index is incremented by one.
   // Higher bits means more significant bits. There are 2^3 bits per byte.
-  result.byte[(bit & 63) >> 3] = 1 << (bit & 7);
+  result.byte[(bit & (bitmap_t_bits - 1)) >> 3] = 1 << (bit & 7);
   return result;
 }
 
@@ -143,7 +151,7 @@ std::ostream& operator<<(std::ostream& os, journal_superblock_t const& journal_s
 // Print group descriptor.
 std::ostream& operator<<(std::ostream& os, ext3_group_desc const& group_desc);
 
-// Print journal header;
+// Print journal header.
 std::ostream& operator<<(std::ostream& os, journal_header_t const& journal_header);
 std::ostream& operator<<(std::ostream& os, journal_block_tag_t const& journal_block_tag);
 std::ostream& operator<<(std::ostream& os, journal_revoke_header_t const& journal_revoke_header);
@@ -151,23 +159,24 @@ std::ostream& operator<<(std::ostream& os, journal_revoke_header_t const& journa
 // The (first) super block starts here.
 int const SUPER_BLOCK_OFFSET = 1024;
 
+// The type of commandline_histogram.
 enum hist_type {
-  hist_none = 0,
-  hist_atime,
-  hist_ctime,
-  hist_mtime,
-  hist_dtime,
-  hist_group
+  hist_none = 0,	// No histogram.
+  hist_atime,		// Request histogram of access times.
+  hist_ctime,		// Request histogram of file modification times.
+  hist_mtime,		// Request histogram of inode modification times.
+  hist_dtime,		// Request histogram of deletion times.
+  hist_group		// Request histogram of deletions per group.
 };
 
+// Return type of is_directory.
 enum is_directory_type {
-  isdir_no = 0,
-  isdir_start,
-  isdir_extended
+  isdir_no = 0,		// Block is not a directory.
+  isdir_start,		// Block is a directory containing "." and "..".
+  isdir_extended	// Block is a directory not containing "." and "..".
 };
 
 // Commandline options.
-char const* progname;
 bool commandline_superblock = false;
 int commandline_group = -1;
 int commandline_inode_to_block = -1;
@@ -203,9 +212,9 @@ bool commandline_show_hardlinks = false;
 bool commandline_debug = false;
 bool commandline_debug_malloc = false;
 
+// Forward declarations.
 struct Parent;
 class DirectoryBlockStats;
-
 static void decode_commandline_options(int& argc, char**& argv);
 static void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size);
 static void print_block_to(std::ostream& os, unsigned char* block);
@@ -247,8 +256,9 @@ static void show_hardlinks(void);
 static void init_accept(void);
 static int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int directory_block_number);
 
-// Frequently used constant values from the superblock.
+// The superblock.
 ext3_super_block super_block;
+// Frequently used constant values from the superblock.
 int groups_;
 int block_size_;
 int block_size_log_;
@@ -259,12 +269,13 @@ uint32_t block_count_;
 
 // The journal super block.
 journal_superblock_t journal_super_block;
-Inode journal_inode;
+// Frequently used constant values from the journal superblock.
 int journal_block_size_;
 int journal_maxlen_;
 int journal_first_;
 int journal_sequence_;
 int journal_start_;
+Inode journal_inode;
 
 // Convert block to byte-offset.
 // Returns the offset (dd --seek) in the device file to the first byte of the block.
@@ -276,25 +287,26 @@ static inline off_t block_to_offset(int block)
 }
 
 // Globally used variables.
+char const* progname;
 std::ifstream device;
-uint64_t** inode_bitmap;
-uint64_t** block_bitmap;
-Inode** all_inodes;
 #if USE_MMAP
+int device_fd;
+long page_size_;
 void** all_mmaps;
 #endif
-ext3_group_desc* group_descriptor_table;
+char* reserved_memory;
+Inode** all_inodes;
+bitmap_t** block_bitmap;
+bitmap_t** inode_bitmap;
 char* inodes_buf;
+ext3_group_desc* group_descriptor_table;
 int no_filtering = 0;
 std::string device_name;
-uint32_t wrapped_journal_sequence = 0;
-#if USE_MMAP
-long page_size_;
-int device_fd;
-#endif
-static std::string const outputdir = "RESTORED_FILES/";
 bool feature_incompat_filetype = false;
-char* reserved_memory;
+uint32_t wrapped_journal_sequence = 0;
+
+// Real constants.
+static std::string const outputdir = "RESTORED_FILES/";
 
 // Define our own assert.
 #undef ASSERT
@@ -376,16 +388,18 @@ void init_consts()
 
   // Global arrays.
   reserved_memory = new char [50000];				// This is freed in dump_backtrace_on to make sure we have enough memory.
+  inodes_buf = new char[inodes_per_group_ * inode_size_];
+
+  // Global arrays of pointers.
   all_inodes = new Inode* [groups_];
 #if USE_MMAP
   all_mmaps = new void* [groups_];
 #endif
-  block_bitmap = new uint64_t* [groups_];
+  block_bitmap = new bitmap_t* [groups_];
   // We use this array to know of which groups we loaded the metadata. Therefore zero it out.
-  std::memset(block_bitmap, 0, sizeof(uint64_t*) * groups_);
-  inode_bitmap = new uint64_t* [groups_];
+  std::memset(block_bitmap, 0, sizeof(bitmap_t*) * groups_);
+  inode_bitmap = new bitmap_t* [groups_];
   assert((size_t)inode_size_ == sizeof(Inode));			// This fails if kernel headers are used.
-  inodes_buf = new char[inodes_per_group_ * inode_size_];
 
   // Initialize group_descriptor_table.
 
@@ -949,7 +963,7 @@ bool is_allocated(int inode)
     load_meta_data(group);
   unsigned int bit = inode - 1 - group * inodes_per_group_;
   ASSERT(bit < 8U * block_size_);
-  struct bitmap_ptr bmp = get_bitmap_mask(bit);
+  bitmap_ptr bmp = get_bitmap_mask(bit);
   return (inode_bitmap[group][bmp.index] & bmp.mask);
 }
 
@@ -963,12 +977,16 @@ bool is_block_number(uint32_t block_number)
 // Indirect blocks
 //
 
-static bool found_block;
-static int block_looking_for;
-void find_block_action(int blocknr, void*)
+struct find_block_data_st {
+  bool found_block;
+  int block_looking_for;
+};
+
+void find_block_action(int blocknr, void* ptr)
 {
-  if (blocknr == block_looking_for)
-    found_block = true;
+  find_block_data_st* data = reinterpret_cast<find_block_data_st*>(ptr);
+  if (blocknr == data.block_looking_for)
+    data.found_block = true;
 }
 
 void print_directory_action(int blocknr, void*)
@@ -984,8 +1002,9 @@ void print_directory_action(int blocknr, void*)
   using_static_buffer = false;
 }
 
-unsigned int const direct_bit = 1;
-unsigned int const indirect_bit = 2;
+// Constants used with iterate_over_all_blocks_of
+unsigned int const direct_bit = 1;		// Call action() for real blocks.
+unsigned int const indirect_bit = 2;		// Call action() for (double/tripple) indirect blocks.
 
 bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int)
 {
@@ -1138,13 +1157,13 @@ void load_meta_data(int group)
     return;
   DoutEntering(dc::notice, "load_meta_data(" << group << ")");
   // Load block bitmap.
-  block_bitmap[group] = new uint64_t[block_size_ / sizeof(uint64_t)];
+  block_bitmap[group] = new bitmap_t[block_size_ / sizeof(bitmap_t)];
   device.seekg(block_to_offset(group_descriptor_table[group].bg_block_bitmap));
   ASSERT(device.good());
   device.read(reinterpret_cast<char*>(block_bitmap[group]), block_size_);
   ASSERT(device.good());
   // Load inode bitmap.
-  inode_bitmap[group] = new uint64_t[block_size_ / sizeof(uint64_t)];
+  inode_bitmap[group] = new bitmap_t[block_size_ / sizeof(bitmap_t)];
   device.seekg(block_to_offset(group_descriptor_table[group].bg_inode_bitmap));
   ASSERT(device.good());
   device.read(reinterpret_cast<char*>(inode_bitmap[group]), block_size_);
@@ -1190,6 +1209,7 @@ void run_program(void)
     // Read the first superblock.
     device.seekg(block_to_offset(first_block));
     ASSERT(device.good());
+    // journal_super_block is initialized here.
     device.read(reinterpret_cast<char*>(&journal_super_block), sizeof(journal_superblock_s));
     ASSERT(device.good());
     if (commandline_superblock && commandline_journal)
@@ -1309,12 +1329,12 @@ void run_program(void)
     if (commandline_print)
     {
       std::cout << "\nHex dump of inode " << commandline_inode << ":\n";
-      dump_hex_to(std::cout, (unsigned char*)&inode, inode_size_);
+      dump_hex_to(std::cout, (unsigned char const*)&inode, inode_size_);
       std::cout << '\n';
     }
     unsigned int bit = commandline_inode - 1 - commandline_group * inodes_per_group_;
     ASSERT(bit < 8U * block_size_);
-    struct bitmap_ptr bmp = get_bitmap_mask(bit);
+    bitmap_ptr bmp = get_bitmap_mask(bit);
     bool allocated = (inode_bitmap[commandline_group][bmp.index] & bmp.mask);
     if (allocated)
       std::cout << "Inode is Allocated\n";
@@ -1372,7 +1392,7 @@ void run_program(void)
       std::cout << "Group: " << commandline_group << '\n';
       unsigned int bit = commandline_block - first_data_block(super_block) - commandline_group * blocks_per_group(super_block);
       ASSERT(bit < 8U * block_size_);
-      struct bitmap_ptr bmp = get_bitmap_mask(bit);
+      bitmap_ptr bmp = get_bitmap_mask(bit);
       DirectoryBlockStats stats;
       is_directory_type isdir = is_directory(block, commandline_block, stats, false);
       if (block_bitmap[commandline_group] == NULL)
@@ -1582,7 +1602,7 @@ void run_program(void)
 	  continue;
 	if (commandline_allocated || commandline_unallocated)
 	{
-	  struct bitmap_ptr bmp = get_bitmap_mask(bit);
+	  bitmap_ptr bmp = get_bitmap_mask(bit);
 	  bool allocated = (inode_bitmap[group][bmp.index] & bmp.mask);
 	  if (commandline_allocated && !allocated)
 	    continue;
@@ -1657,7 +1677,7 @@ void run_program(void)
       unsigned int bit = first_block - first_data_block(super_block) - group * blocks_per_group(super_block);
       for (int block = first_block; block < last_block; ++block, ++bit)
       {
-	struct bitmap_ptr bmp = get_bitmap_mask(bit);
+	bitmap_ptr bmp = get_bitmap_mask(bit);
 	bool allocated = (block_bitmap[group][bmp.index] & bmp.mask);
 	if (commandline_allocated && !allocated)
 	  continue;
@@ -1709,11 +1729,12 @@ void run_program(void)
     for (uint32_t inode = 1; inode <= inode_count_; ++inode)
     {
       Inode& ino = get_inode(inode);
-      found_block = false;
-      block_looking_for = commandline_search_inode;
-      bool reused_or_corrupted_indirect_block2 = iterate_over_all_blocks_of(ino, find_block_action);
+      find_block_data_st data;
+      data.block_looking_for = commandline_search_inode;
+      data.found_block = false;
+      bool reused_or_corrupted_indirect_block2 = iterate_over_all_blocks_of(ino, find_block_action, &data);
       ASSERT(!reused_or_corrupted_indirect_block2);
-      if (found_block)
+      if (data.found_block)
         std::cout << ' ' << inode << std::flush;
     }
     std::cout << '\n';
@@ -1784,11 +1805,6 @@ void run_program(void)
 #endif
     delete [] group_descriptor_table;
   }
-
-  device.close();
-#if USE_MMAP
-  close(device_fd);
-#endif
 }
 
 int main(int argc, char* argv[])
@@ -1864,6 +1880,7 @@ int main(int argc, char* argv[])
     std::cerr << progname << ": failed to seek to position " << SUPER_BLOCK_OFFSET << " of \"" << *argv << "\": " << strerror(error) << std::endl;
     exit(EXIT_FAILURE);
   }
+  // super_block is initialized here.
   device.read(reinterpret_cast<char*>(&super_block), sizeof(ext3_super_block));
   if (!device.good())
   {
@@ -1874,8 +1891,8 @@ int main(int argc, char* argv[])
   }
 
   // Initialize global constants.
-  init_consts();
   device_name = *argv;
+  init_consts();
 
   try
   {
@@ -1893,6 +1910,11 @@ int main(int argc, char* argv[])
 #endif
     exit(EXIT_FAILURE);
   }
+
+  device.close();
+#if USE_MMAP
+  close(device_fd);
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -2104,7 +2126,7 @@ std::ostream& operator<<(std::ostream& os, journal_revoke_header_t const& journa
   count -= sizeof(journal_revoke_header_t);
   ASSERT(count % sizeof(__be32) == 0);
   count /= sizeof(__be32);
-  __be32* ptr = reinterpret_cast<__be32*>((unsigned char*)&journal_revoke_header + sizeof(journal_revoke_header_t));
+  __be32 const* ptr = reinterpret_cast<__be32 const*>((unsigned char const*)&journal_revoke_header + sizeof(journal_revoke_header_t));
   int c = 0;
   for (uint32_t b = 0; b < count; ++b)
   {
@@ -2729,7 +2751,7 @@ class FileMode {
 	}
 };
 
-static int mode_map[8] = {
+static int const mode_map[8] = {
   0x10000, // EXT3_FT_UNKNOWN
    0x8000, // EXT3_FT_REG_FILE
    0x4000, // EXT3_FT_DIR
@@ -3759,10 +3781,10 @@ struct AllDescriptorsPred {
 
 static int smallest_block_nr;
 static int largest_block_nr;
-static uint64_t* journal_block_bitmap = NULL;
+static bitmap_t* journal_block_bitmap = NULL;
 static int min_journal_block;
 static int max_journal_block;		// One more than largest block belonging to the journal.
-static uint64_t* is_indirect_block_in_journal_bitmap = NULL;
+static bitmap_t* is_indirect_block_in_journal_bitmap = NULL;
 
 void find_blocknr_range_action(int blocknr, void*)
 {
@@ -3774,13 +3796,13 @@ void find_blocknr_range_action(int blocknr, void*)
 
 void fill_journal_bitmap_action(int blocknr, void*)
 {
-  struct bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
+  bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
   journal_block_bitmap[bmp.index] |= bmp.mask;
 }
 
 void indirect_journal_block_action(int blocknr, void*)
 {
-  struct bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
+  bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
   is_indirect_block_in_journal_bitmap[bmp.index] |= bmp.mask;
 }
 
@@ -3812,12 +3834,12 @@ static void init_journal(void)
   std::cout << "Minimum / maximum journal block: " << min_journal_block << " / " << max_journal_block << '\n';
   // Allocate and fill the bitmaps.
   int size = (max_journal_block - min_journal_block + 63) / 64;
-  is_indirect_block_in_journal_bitmap = new uint64_t [size];
-  memset(is_indirect_block_in_journal_bitmap, 0, size * sizeof(uint64_t));
+  is_indirect_block_in_journal_bitmap = new bitmap_t [size];
+  memset(is_indirect_block_in_journal_bitmap, 0, size * sizeof(bitmap_t));
   bool reused_or_corrupted_indirect_block5 = iterate_over_all_blocks_of(journal_inode, indirect_journal_block_action, NULL, indirect_bit);
   ASSERT(!reused_or_corrupted_indirect_block5);
-  journal_block_bitmap = new uint64_t [size];
-  memset(journal_block_bitmap, 0, size * sizeof(uint64_t));
+  journal_block_bitmap = new bitmap_t [size];
+  memset(journal_block_bitmap, 0, size * sizeof(bitmap_t));
   bool reused_or_corrupted_indirect_block6 = iterate_over_all_blocks_of(journal_inode, fill_journal_bitmap_action, NULL, indirect_bit | direct_bit);
   ASSERT(!reused_or_corrupted_indirect_block6);
   // Initialize the Descriptors.
@@ -3929,7 +3951,7 @@ static bool is_journal(int blocknr)
   }
   if (!is_in_journal(blocknr))
     return false;
-  struct bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
+  bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
   return (journal_block_bitmap[bmp.index] & bmp.mask);
 }
 
@@ -3938,7 +3960,7 @@ static bool is_indirect_block_in_journal(int blocknr)
   ASSERT(is_indirect_block_in_journal_bitmap);
   if (blocknr >= max_journal_block || blocknr < min_journal_block)
     return false;
-  struct bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
+  bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
   return (is_indirect_block_in_journal_bitmap[bmp.index] & bmp.mask);
 }
 
@@ -4830,6 +4852,10 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
       std::cout << ").\n";
       inode_to_directory_type::iterator iter = inode_to_directory.find(res.first->second.inode_number());
       ASSERT(iter != inode_to_directory.end());
+#ifdef CARLO_WOODS_CASE
+      if (iter->first == 360573)
+        std::cout << "1******: Erasing " << iter->first << " from inode_to_directory map!\n";
+#endif
       inode_to_directory.erase(iter);
       all_directories.erase(res.first);
       res = all_directories.insert(all_directories_type::value_type(parent->dirname(false), Directory(inode_number, first_block)));
@@ -4854,6 +4880,10 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
   }
   std::pair<inode_to_directory_type::iterator, bool> res2 =
       inode_to_directory.insert(inode_to_directory_type::value_type(inode_number, res.first));
+#ifdef CARLO_WOODS_CASE
+  if (inode_number == 360573)
+    std::cout << "1******: Attempt to insert inode " << inode_number << " in inode_to_directory " << (res2.second ? "succeeded" : "failed") << '\n';
+#endif
   if (!res2.second)
   {
     if (inode_number == res2.first->second->second.inode_number() && res.first == res2.first->second)
@@ -4868,9 +4898,17 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
     if (new_path && !old_path)
     {
       std::cout << "Using \"" << parent->dirname(commandline_show_path_inodes) << "\" as \"" << res2.first->second->first << " doesn't exist in the locate database.\n";
+#ifdef CARLO_WOODS_CASE
+      if (res2.first->first == 360573)
+        std::cout << "1******: Erasing " << res2.first->first << " from inode_to_directory map!\n";
+#endif
       inode_to_directory.erase(res2.first);
       std::pair<inode_to_directory_type::iterator, bool> res3 =
 	  inode_to_directory.insert(inode_to_directory_type::value_type(inode_number, res.first));
+#ifdef CARLO_WOODS_CASE
+      if (inode_number == 360573)
+	std::cout << "2******: Attempt to insert inode " << inode_number << " in inode_to_directory " << (res3.second ? "succeeded" : "failed") << '\n';
+#endif
       ASSERT(res3.second);
     }
     else if (!new_path && old_path)
@@ -5207,6 +5245,10 @@ void init_directories(void)
       std::pair<all_directories_type::iterator, bool> res = all_directories.insert(all_directories_type::value_type(path.str(), Directory(inode)));
       ASSERT(res.second);
       std::pair<inode_to_directory_type::iterator, bool> res2 = inode_to_directory.insert(inode_to_directory_type::value_type(inode, res.first));
+#ifdef CARLO_WOODS_CASE
+      if (inode == 360573)
+	std::cout << "3******: Attempt to insert inode " << inode << " in inode_to_directory " << (res2.second ? "succeeded" : "failed") << '\n';
+#endif
       ASSERT(res2.second);
       std::vector<uint32_t> block_numbers;
       while(cache >> blocknr)
@@ -5673,7 +5715,7 @@ void show_hardlinks(void)
 	  int group = block_to_group(super_block, dirblocknr);;
 	  unsigned int bit = dirblocknr - first_data_block(super_block) - group * blocks_per_group(super_block);
 	  ASSERT(bit < 8U * block_size_);
-	  struct bitmap_ptr bmp = get_bitmap_mask(bit);
+	  bitmap_ptr bmp = get_bitmap_mask(bit);
 	  ASSERT(block_bitmap[group]);
 	  bool allocated = (block_bitmap[group][bmp.index] & bmp.mask);
 	  if (allocated)

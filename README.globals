@@ -1,0 +1,84 @@
+The following global variables are used. They are initialized in the given order.
+
+* Global initialization
+
+- no_filtering		Initialized to zero before main().
+			(Sometimes) incremented before iterate_over_directory and decremented at the end.
+
+* main()
+* decode_commandline_options()
+
+- progname		Initialized in decode_commandline_options(). Never changed anymore.
+
+- commandline_*		Defaulted when they are defined (* Global initialization).
+			Possibly changed and set to their 'final' value in decode_commandline_options().
+			However, commandline_group, commandline_block, commandline_allocated and commandline_unallocated
+			are sometimes changed in run_program() (as function of the other commandline options).
+			commandline_depth is temporarily set to 10000 before a call to iterate_over_directory()
+			or iterate_over_directory() in respectively link_extended_directory_block_to_inode() and
+			init_directories() and then reset to it's former value.
+
+- device		Opened and closed in main(). Members seekg() and read() are called from everywhere.
+- device_fd		Opened and closed in main(). Used to mmap all_inodes[group] in load_inodes(group).
+
+- super_block		Initialized in main(). Never changed anymore.
+- device_name		Initialized in main(). Never changed anymore.
+
+* init_consts()
+
+- groups_, block_size_, block_size_log_, inodes_per_group_, inode_size_, inode_count_, block_count_
+			Copies from the superblock, initialized in init_consts(). Never changed anymore.
+
+- page_size_		Initialized in init_consts(). Never changed anymore.
+
+- Accept::S_illegal, Accept::S_unlikely
+			Initialized in init_accept(), called from init_consts().
+			(Currently) never changed anymore. Currently (r60) not even used.
+
+- reserved_memory, inodes_buf
+			Initialized in init_consts(). Never changed anymore.
+- all_inodes, all_mmaps, block_bitmap, inode_bitmap
+			Arrays of pointers. The arrays are allocated in init_consts() and never changed anymore.
+			See all_inodes[], all_mmaps[], block_bitmap[], inode_bitmap[] for further initialization.
+- group_descriptor_table, group_descriptor_table[]
+			Initialized in init_consts(). Never changed anymore.
+
+* run_program()
+
+- feature_incompat_filetype
+			Initialized in run_program(). Never changed anymore.
+- wrapped_journal_sequence
+			Initialized in init_journal(). Never changed anymore.
+
+- journal_super_block	Initialized in run_program(). Never changed anymore.
+- journal_block_size_, journal_maxlen_, journal_first_, journal_sequence_, journal_start_
+			Copies from the journal superblock, initialized in init_journal_consts(). Never changed anymore.
+
+- journal_inode		Initialized in init_journal_consts(). Never changed anymore.
+
+TODO:
+
+- std::set<Accept> accepted_filenames
+- depth
+
+- S_min, S_max, S_bs, histo[], S_maxcount
+
+- std::vector<Descriptor*> all_descriptors
+- std::map<int, Transaction> sequence_transaction_map;
+- std::map<int, std::vector<Descriptor*> > block_to_descriptors_map;
+- std::map<int, Descriptor*> block_in_journal_to_descriptors_map;
+- std::map<int, int> block_to_dir_inode_map;
+
+- number_of_descriptors, min_sequence, max_sequence
+- smallest_block_nr, largest_block_nr, journal_block_bitmap, journal_block_bitmap[],
+  min_journal_block, max_journal_block, is_indirect_block_in_journal_bitmap, is_indirect_block_in_journal_bitmap[]
+
+- dir_inode_to_block_cache, dir_inode_to_block_cache[]
+- std::vector<int> extended_blocks
+
+- std::map<std::string, Directory> all_directories
+- std::map<uint32_t, all_directories_type::iterator> inode_to_directory
+
+- std::map<std::string, int> path_to_inode_map
+- std::map<int, std::vector<std::vector<DirEntry>::iterator> > inode_to_dir_entry
+

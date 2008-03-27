@@ -100,10 +100,10 @@ std::string parent_directory(int blocknr, std::set<std::string> const& filenames
 {
   if (!initialized)
     load_locate_data();
-#ifdef CARLO_WOODS_CASE
-  if (blocknr == 1016319 || blocknr == 1640008 || blocknr == 1640009)
-    return "lost+found";	// Google Earth junk.
-#endif
+//#ifdef CARLO_WOODS_CASE	This should be automatic now.
+//  if (blocknr == 1016319 || blocknr == 1640008 || blocknr == 1640009)
+//    return "lost+found";	// Google Earth junk.
+//#endif
   typedef std::map<std::string, std::pair<int, bool> > possible_directories_type;
   possible_directories_type possible_directories;
   for (std::set<std::string>::const_iterator filename_iter = filenames.begin(); filename_iter != filenames.end(); ++filename_iter)
@@ -161,13 +161,13 @@ std::string parent_directory(int blocknr, std::set<std::string> const& filenames
     // The format is: "regular expression of files", "parent directory"
     // You can set test_blocknr and uncomment the #if 0'd code below to debug your regular expressions.
     static struct { char const* regexp; char const* path; } table[] = {
-#ifdef CARLO_WOODS_CASE
-      { "^(.*-BNC|ircproxy-.*|EFnet|UnderNet|FreeNode .*|OFTC|NETWORK|GimpNet|AS-....)-.*\\.log$", "carlo/.xchat2/xchatlogs" },
-      { "^([0-9]{10}-[0-9]{3,5}-[0-9]+|11c0a8020[0-9]{28})\\.ms$", "carlo/k3b/temp" },
-      { "^1[12][0-9]{11}_(AutoSpeedSearchHistory|SpeedMan|seltrace|thread|alerts|debug)_[12]\\.log$", "carlo/.azureus/logs/save" },
-      { "^opr0[0-9][0-9A-Z]{3}\\.(js|ico|htm|gif|png|html|jpeg|xml|flv|css|swf|jpg)$", "lost+found" },
-      { "\\.(md5|eps|tex)$", "lost+found" }
-#endif
+//#ifdef CARLO_WOODS_CASE	This should be automatic now.
+//      { "^(.*-BNC|ircproxy-.*|EFnet|UnderNet|FreeNode .*|OFTC|NETWORK|GimpNet|AS-....)-.*\\.log$", "carlo/.xchat2/xchatlogs" },
+//      { "^([0-9]{10}-[0-9]{3,5}-[0-9]+|11c0a8020[0-9]{28})\\.ms$", "carlo/k3b/temp" },
+//      { "^1[12][0-9]{11}_(AutoSpeedSearchHistory|SpeedMan|seltrace|thread|alerts|debug)_[12]\\.log$", "carlo/.azureus/logs/save" },
+//      { "^opr0[0-9][0-9A-Z]{3}\\.(js|ico|htm|gif|png|html|jpeg|xml|flv|css|swf|jpg)$", "lost+found" },
+//      { "\\.(md5|eps|tex)$", "lost+found" }
+//#endif
     };
     regex_t preg;
     int re_end = sizeof(table) / sizeof(table[0]);

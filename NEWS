@@ -3,6 +3,8 @@ ext3grep-0.4.2
         Force recompile if CXXFLAGS changes.
 	Don't print any non-ASCII characters.
 	Treat any non-ASCII character as 'weird' in filenames, thus also values larger than 127.
+	Use unsigned long for bitmap_t instead of uint64_t.
+	Added README.globals with a description of the used global variables.
 
 ext3grep-0.4.1
 

@@ -1,0 +1,25 @@
+There are two functions that iterate over a list and call an 'action' function for each of them:
+
+iterate_over_all_blocks_of() and iterate_over_directory().
+
+iterate_over_all_blocks_of() is called from : with
+	run_program()      : print_directory_action, find_block_action
+	filter_dir_entry() : iterate_over_existing_directory_action
+	init_journal()     : find_blocknr_range_action, indirect_journal_block_action, fill_journal_bitmap_action, directory_inode_action
+	inode_refers_to()  : inode_refers_to_action
+	restore_file()     : restore_file_action
+
+iterate_over_directory is called from : with
+	DirectoryBlock::read_block() : read_block_action
+	print_directory() : print_dir_entry_long_action
+	link_extended_directory_block_to_inode() : init_directories_action
+	init_directories() : init_directories_action, extended_directory_action, filename_heuristics_action
+
+Note that iterate_over_directory() calls filter_dir_entry() which then calls the
+action via various paths: either directly and/or by calling iterate_over_directory_action
+which then calls the action function, or by iterating over a subdirectory by calling
+iterate_over_all_blocks_of with iterate_over_existing_directory_action which then
+calls iterate_over_directory with the action function. These indirect paths are
+hidden in cppgraph graphs by simply stating that a function calls iterate_over_directory__with__action
+and have iterate_over_directory__with__action call action directly.
+

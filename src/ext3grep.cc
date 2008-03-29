@@ -5748,9 +5748,11 @@ void show_hardlinks(void)
   DoutEntering(dc::notice, "show_hardlinks()");
 
   init_files();
+#if 0 // I added this loop with a plan... but I forgot what it was.
   for (all_directories_type::iterator iter = all_directories.begin(); iter != all_directories.end(); ++iter)
   {
   }
+#endif
   typedef std::map<int, std::vector<path_to_inode_map_type::iterator> > inodes_type;
   inodes_type inodes;
   for (path_to_inode_map_type::iterator iter = path_to_inode_map.begin(); iter != path_to_inode_map.end(); ++iter)

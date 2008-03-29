@@ -984,10 +984,14 @@ struct find_block_data_st {
 
 void find_block_action(int blocknr, void* ptr)
 {
-  find_block_data_st* data = reinterpret_cast<find_block_data_st*>(ptr);
+  find_block_data_st& data(*reinterpret_cast<find_block_data_st*>(ptr));
   if (blocknr == data.block_looking_for)
     data.found_block = true;
 }
+
+#ifdef CPPGRAPH
+void iterate_over_all_blocks_of__with__find_block_action(void) { find_block_action(0, NULL); }
+#endif
 
 void print_directory_action(int blocknr, void*)
 {
@@ -1001,6 +1005,10 @@ void print_directory_action(int blocknr, void*)
     print_directory(block, blocknr);
   using_static_buffer = false;
 }
+
+#ifdef CPPGRAPH
+void iterate_over_all_blocks_of__with__print_directory_action(void) { print_directory_action(0, NULL); }
+#endif
 
 // Constants used with iterate_over_all_blocks_of
 unsigned int const direct_bit = 1;		// Call action() for real blocks.
@@ -1513,6 +1521,10 @@ void run_program(void)
 	  }
 	  else
 	  {
+#ifdef CPPGRAPH
+            // Tell cppgraph that we call print_directory_action from here.
+            iterate_over_all_blocks_of__with__print_directory_action();
+#endif
 	    // Run over all blocks.
 	    bool reused_or_corrupted_indirect_block1 = iterate_over_all_blocks_of(inode, print_directory_action);
 	    if (reused_or_corrupted_indirect_block1)
@@ -1732,6 +1744,10 @@ void run_program(void)
       find_block_data_st data;
       data.block_looking_for = commandline_search_inode;
       data.found_block = false;
+#ifdef CPPGRAPH
+      // Tell cppgraph that we call find_block_action from here.
+      iterate_over_all_blocks_of__with__find_block_action();
+#endif
       bool reused_or_corrupted_indirect_block2 = iterate_over_all_blocks_of(ino, find_block_action, &data);
       ASSERT(!reused_or_corrupted_indirect_block2);
       if (data.found_block)
@@ -2994,6 +3010,10 @@ bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode& inode
   return false;
 }
 
+#ifdef CPPGRAPH
+void iterate_over_directory__with__print_dir_entry_long_action(void) { (void)print_dir_entry_long_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+#endif
+
 //-----------------------------------------------------------------------------
 //
 // Directories
@@ -3013,6 +3033,9 @@ struct iterate_data_st {
 static int depth;
 bool read_block_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
     bool deleted, bool allocated, bool reallocated, bool zero_inode, bool linked, bool filtered, Parent* parent, void* data);
+#ifdef CPPGRAPH
+void iterate_over_directory__with__read_block_action(void) { (void)read_block_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+#endif
 bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bool, bool, bool, bool, bool, Parent* parent, void*);
 
 static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
@@ -3132,6 +3155,10 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
     }
   }
 }
+
+#ifdef CPPGRAPH
+void iterate_over_directory__with__init_directories_action(void) { (void)init_directories_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+#endif
 
 static void iterate_over_directory_action(int blocknr, void* data)
 {
@@ -3289,6 +3316,10 @@ void DirectoryBlock::read_block(int block, std::list<DirectoryBlock>::iterator l
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   get_block(block, block_buf);
   using_static_buffer = true;
+#ifdef CPPGRAPH
+  // Let cppgraph know that we call read_block_action from here.
+  iterate_over_directory__with__read_block_action();
+#endif
   iterate_over_directory(block_buf, block, read_block_action, NULL, &list_iter);
   // Sort the vector by dir_entry pointer.
   std::sort(M_dir_entry.begin(), M_dir_entry.end(), DirEntrySortPred());
@@ -3411,6 +3442,10 @@ static void print_directory(unsigned char* block, int blocknr)
   }
   else
   {
+#ifdef CPPGRAPH
+    // Let cppgraph know that we call print_dir_entry_long_action from here.
+    iterate_over_directory__with__print_dir_entry_long_action();
+#endif
     ++no_filtering;
     iterate_over_directory(block, blocknr, print_dir_entry_long_action, NULL, NULL);
     --no_filtering;
@@ -3794,17 +3829,29 @@ void find_blocknr_range_action(int blocknr, void*)
     smallest_block_nr = blocknr;
 }
 
+#ifdef CPPGRAPH
+void iterate_over_all_blocks_of__with__find_blocknr_range_action(void) { find_blocknr_range_action(0, NULL); }
+#endif
+
 void fill_journal_bitmap_action(int blocknr, void*)
 {
   bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
   journal_block_bitmap[bmp.index] |= bmp.mask;
 }
 
+#ifdef CPPGRAPH
+void iterate_over_all_blocks_of__with__fill_journal_bitmap_action(void) { fill_journal_bitmap_action(0, NULL); }
+#endif
+
 void indirect_journal_block_action(int blocknr, void*)
 {
   bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
   is_indirect_block_in_journal_bitmap[bmp.index] |= bmp.mask;
 }
+
+#ifdef CPPGRAPH
+void iterate_over_all_blocks_of__with__indirect_journal_block_action(void) { indirect_journal_block_action(0, NULL); }
+#endif
 
 void directory_inode_action(int blocknr, void* data)
 {
@@ -3816,6 +3863,10 @@ void directory_inode_action(int blocknr, void* data)
     iter->second = inode_number;	// We're called with ascending sequence numbers. Therefore, keep the last.
 }
 
+#ifdef CPPGRAPH
+void iterate_over_all_blocks_of__with__directory_inode_action(void) { directory_inode_action(0, NULL); }
+#endif
+
 static void init_journal(void)
 {
   DoutEntering(dc::notice, "init_journal()");
@@ -3826,6 +3877,10 @@ static void init_journal(void)
   // Find the block range used by the journal.
   smallest_block_nr = block_count(super_block);
   largest_block_nr = 0;
+#ifdef CPPGRAPH
+  // Tell cppgraph that we call find_blocknr_range_action from here.
+  iterate_over_all_blocks_of__with__find_blocknr_range_action();
+#endif
   bool reused_or_corrupted_indirect_block4 = iterate_over_all_blocks_of(journal_inode, find_blocknr_range_action, NULL, indirect_bit | direct_bit);
   ASSERT(!reused_or_corrupted_indirect_block4);
   ASSERT(smallest_block_nr < largest_block_nr);		// A non-external journal must have a size.
@@ -3836,10 +3891,18 @@ static void init_journal(void)
   int size = (max_journal_block - min_journal_block + 63) / 64;
   is_indirect_block_in_journal_bitmap = new bitmap_t [size];
   memset(is_indirect_block_in_journal_bitmap, 0, size * sizeof(bitmap_t));
+#ifdef CPPGRAPH
+  // Tell cppgraph that we call indirect_journal_block_action from here.
+  iterate_over_all_blocks_of__with__indirect_journal_block_action();
+#endif
   bool reused_or_corrupted_indirect_block5 = iterate_over_all_blocks_of(journal_inode, indirect_journal_block_action, NULL, indirect_bit);
   ASSERT(!reused_or_corrupted_indirect_block5);
   journal_block_bitmap = new bitmap_t [size];
   memset(journal_block_bitmap, 0, size * sizeof(bitmap_t));
+#ifdef CPPGRAPH
+  // Tell cppgraph that we call fill_journal_bitmap_action from here.
+  iterate_over_all_blocks_of__with__fill_journal_bitmap_action();
+#endif
   bool reused_or_corrupted_indirect_block6 = iterate_over_all_blocks_of(journal_inode, fill_journal_bitmap_action, NULL, indirect_bit | direct_bit);
   ASSERT(!reused_or_corrupted_indirect_block6);
   // Initialize the Descriptors.
@@ -3912,6 +3975,10 @@ static void init_journal(void)
         // Skip deleted inodes.
         if (inode[i].dtime() != 0 || inode[i].atime() == 0 || inode[i].block()[0] == 0)
 	  continue;
+#ifdef CPPGRAPH
+        // Tell cppgraph that we call directory_inode_action from here.
+        iterate_over_all_blocks_of__with__directory_inode_action();
+#endif
 	// Run over all blocks of the directory inode.
 	bool reused_or_corrupted_indirect_block7 = iterate_over_all_blocks_of(inode[i], directory_inode_action, &inode_number);
 	if (reused_or_corrupted_indirect_block7)
@@ -4191,11 +4258,19 @@ void inode_refers_to_action(int blocknr, void* ptr)
     data.found = true;
 }
 
+#ifdef CPPGRAPH
+void iterate_over_all_blocks_of__with__inode_refers_to_action(void) { inode_refers_to_action(0, NULL); }
+#endif
+
 bool inode_refers_to(Inode& inode, int block_number)
 {
   inode_refers_to_st data;
   data.block_number = block_number;
   data.found = false;
+#ifdef CPPGRAPH
+  // Tell cppgraph that we call inode_refers_to_action from here.
+  iterate_over_all_blocks_of__with__inode_refers_to_action();
+#endif
   bool reused_or_corrupted_indirect_block9 = iterate_over_all_blocks_of(inode, inode_refers_to_action, &data);
   if (data.found)
     return true;
@@ -4234,7 +4309,7 @@ int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int 
 //
 
 // dir_inode_to_block_cache is an array of either
-// one block numbers stored directly, or pointers to
+// one block number stored directly, or pointers to an
 // array with more than one block (allocated with new).
 // The first entry of such an array contains the length
 // of the array.
@@ -4245,7 +4320,7 @@ int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int 
 #define BVASSERT(x) ASSERT(x)
 
 union blocknr_vector_type {
-  size_t blocknr;		// The must be a size_t in order to align the least significant bit with the least significant bit of blocknr_vector.
+  size_t blocknr;		// This must be a size_t in order to align the least significant bit with the least significant bit of blocknr_vector.
   uint32_t* blocknr_vector;
 
   void push_back(uint32_t blocknr);
@@ -4936,6 +5011,10 @@ bool filename_heuristics_action(ext3_dir_entry_2 const& dir_entry, Inode& UNUSED
   return false;
 }
 
+#ifdef CPPGRAPH
+void iterate_over_directory__with__filename_heuristics_action(void) { (void)filename_heuristics_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+#endif
+
 bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
     bool UNUSED(deleted), bool UNUSED(allocated), bool reallocated, bool zero_inode, bool linked, bool UNUSED(filtered), Parent*, void* ptr)
 {
@@ -4974,6 +5053,10 @@ bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
   return false;
 }
 
+#ifdef CPPGRAPH
+void iterate_over_directory__with__extended_directory_action(void) { (void)extended_directory_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+#endif
+
 void link_extended_directory_block_to_inode(unsigned char* block_buf, int blocknr, int inode)
 {
   // Add extended directory as DirectoryBlock to the corresponding Directory.
@@ -4998,6 +5081,10 @@ void link_extended_directory_block_to_inode(unsigned char* block_buf, int blockn
   Parent dummy_parent(NULL, 0);
   Parent parent(&dummy_parent, &fake_dir_entry, &get_inode(inode), inode);
   ASSERT(parent.dirname(false) == std::string(directory_iter->second->first));
+#ifdef CPPGRAPH
+  // Let cppgraph know that we call init_directories_action from here.
+  iterate_over_directory__with__init_directories_action();
+#endif
   // Iterate over all directory blocks that we can reach.
   int depth_store = commandline_depth;
   commandline_depth = 10000;
@@ -5043,6 +5130,10 @@ void init_directories(void)
     // Get the contents of the first block of the root directory.
     unsigned char* block_buf = new unsigned char [block_size_];
     get_block(root_blocknr, block_buf);
+#ifdef CPPGRAPH
+    // Let cppgraph know that we call init_directories_action from here.
+    iterate_over_directory__with__init_directories_action();
+#endif
     // Iterate over all first directory blocks that we can reach.
     int depth_store = commandline_depth;
     commandline_depth = 10000;
@@ -5059,6 +5150,10 @@ void init_directories(void)
       get_block(blocknr, block_buf);
       extended_directory_action_data_st data;
       data.blocknr = blocknr;
+#ifdef CPPGRAPH
+      // Let cppgraph know that we call extended_directory_action from here.
+      iterate_over_directory__with__extended_directory_action();
+#endif
       ++no_filtering;
       iterate_over_directory(block_buf, blocknr, extended_directory_action, NULL, &data);
       --no_filtering;
@@ -5115,6 +5210,10 @@ void init_directories(void)
       }
       if (!inode_number)	// Not found yet?
       {
+#ifdef CPPGRAPH
+	// Let cppgraph know that we call filename_heuristics_action from here.
+	iterate_over_directory__with__filename_heuristics_action();
+#endif
 	// Do some heuristics on the filenames.
 	std::set<std::string> filenames;
 	++no_filtering;
@@ -5756,6 +5855,10 @@ void restore_file_action(int blocknr, void* ptr)
   data.remaining_size -= len;
 }
 
+#ifdef CPPGRAPH
+void iterate_over_all_blocks_of__with__restore_file_action(void) { restore_file_action(0, NULL); }
+#endif
+
 mode_t inode_mode_to_mkdir_mode(uint16_t mode)
 {
   mode_t result = 0;
@@ -5899,6 +6002,10 @@ void restore_file(std::string const& outfile)
       }
       Data data(out, inode.size());
       std::cout << "Restoring " << outfile << '\n';
+#ifdef CPPGRAPH
+      // Tell cppgraph that we call restore_file_action from here.
+      iterate_over_all_blocks_of__with__restore_file_action();
+#endif
       bool reused_or_corrupted_indirect_block8 = iterate_over_all_blocks_of(inode, restore_file_action, &data);
       ASSERT(out.good());
       out.close();

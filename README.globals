@@ -3,7 +3,7 @@ The following global variables are used. They are initialized in the given order
 * Global initialization
 
 - no_filtering		Initialized to zero before main().
-			(Sometimes) incremented before iterate_over_directory and decremented at the end.
+                        (Sometimes) incremented before iterate_over_directory and decremented at the end.
 
 * main()
 * decode_commandline_options()
@@ -11,74 +11,204 @@ The following global variables are used. They are initialized in the given order
 - progname		Initialized in decode_commandline_options(). Never changed anymore.
 
 - commandline_*		Defaulted when they are defined (* Global initialization).
-			Possibly changed and set to their 'final' value in decode_commandline_options().
-			However, commandline_group, commandline_block, commandline_allocated and commandline_unallocated
-			are sometimes changed in run_program() (as function of the other commandline options).
-			commandline_depth is temporarily set to 10000 before a call to iterate_over_directory()
-			or iterate_over_directory() in respectively link_extended_directory_block_to_inode() and
-			init_directories() and then reset to it's former value.
+                        Possibly changed and set to their 'final' value in decode_commandline_options().
+                        However, commandline_group, commandline_block, commandline_allocated and commandline_unallocated
+                        are sometimes changed in run_program() (as function of the other commandline options).
+                        commandline_depth is temporarily set to 10000 before a call to iterate_over_directory()
+                        or iterate_over_directory() in respectively link_extended_directory_block_to_inode() and
+                        init_directories() and then reset to it's former value.
+
+- std::set<Accept> accepted_filenames
+                        Initialized in decode_commandline_options(). New entries are added in is_directory() for
+                        every warning starting with "WARNING: Rejecting possible directory ...".
+
+* main()
 
 - device		Opened and closed in main(). Members seekg() and read() are called from everywhere.
+
 - device_fd		Opened and closed in main(). Used to mmap all_inodes[group] in load_inodes(group).
 
 - super_block		Initialized in main(). Never changed anymore.
+
 - device_name		Initialized in main(). Never changed anymore.
 
 * init_consts()
 
 - groups_, block_size_, block_size_log_, inodes_per_group_, inode_size_, inode_count_, block_count_
-			Copies from the superblock, initialized in init_consts(). Never changed anymore.
+                        Copies from the superblock, initialized in init_consts(). Never changed anymore.
 
 - page_size_		Initialized in init_consts(). Never changed anymore.
 
 - Accept::S_illegal, Accept::S_unlikely
-			Initialized in init_accept(), called from init_consts().
-			(Currently) never changed anymore. Currently (r60) not even used.
+                        Initialized in init_accept(), called from init_consts().
+                        (Currently) never changed anymore. Currently (r60) not even used.
 
 - reserved_memory, inodes_buf
-			Initialized in init_consts(). Never changed anymore.
+                        Initialized in init_consts(). Never changed anymore.
+
 - all_inodes, all_mmaps, block_bitmap, inode_bitmap
-			Arrays of pointers. The arrays are allocated in init_consts() and never changed anymore.
-			See all_inodes[], all_mmaps[], block_bitmap[], inode_bitmap[] for further initialization.
+                        Arrays of pointers. The arrays are allocated in init_consts() and never changed anymore.
+                        See all_inodes[], all_mmaps[], block_bitmap[], inode_bitmap[] for further initialization.
+
 - group_descriptor_table, group_descriptor_table[]
-			Initialized in init_consts(). Never changed anymore.
+                        Initialized in init_consts(). Never changed anymore.
 
 * run_program()
 
 - feature_incompat_filetype
-			Initialized in run_program(). Never changed anymore.
-- wrapped_journal_sequence
-			Initialized in init_journal(). Never changed anymore.
+                        Initialized in run_program(). Never changed anymore.
 
 - journal_super_block	Initialized in run_program(). Never changed anymore.
-- journal_block_size_, journal_maxlen_, journal_first_, journal_sequence_, journal_start_
-			Copies from the journal superblock, initialized in init_journal_consts(). Never changed anymore.
 
+* init_journal_consts()
+
+- journal_block_size_, journal_maxlen_, journal_first_, journal_sequence_, journal_start_
+                        Copies from the journal superblock, initialized in init_journal_consts(). Never changed anymore.
 - journal_inode		Initialized in init_journal_consts(). Never changed anymore.
 
-TODO:
+* init_journal()
 
-- std::set<Accept> accepted_filenames
-- depth
+- smallest_block_nr, largest_block_nr, min_journal_block, max_journal_block
+                        Initialized in init_journal(). Never changed anymore.
 
-- S_min, S_max, S_bs, histo[], S_maxcount
+- is_indirect_block_in_journal_bitmap, is_indirect_block_in_journal_bitmap[]
+                        Initialized in init_journal(). Never changed anymore.
 
-- std::vector<Descriptor*> all_descriptors
-- std::map<int, Transaction> sequence_transaction_map;
-- std::map<int, std::vector<Descriptor*> > block_to_descriptors_map;
-- std::map<int, Descriptor*> block_in_journal_to_descriptors_map;
-- std::map<int, int> block_to_dir_inode_map;
+- journal_block_bitmap, journal_block_bitmap[],
+                        Initialized in init_journal(). Never changed anymore.
 
 - number_of_descriptors, min_sequence, max_sequence
-- smallest_block_nr, largest_block_nr, journal_block_bitmap, journal_block_bitmap[],
-  min_journal_block, max_journal_block, is_indirect_block_in_journal_bitmap, is_indirect_block_in_journal_bitmap[]
+                        Initialized by calling count_descriptors(), called from init_journal().  Never changed anymore.
+
+- std::vector<Descriptor*> all_descriptors
+                        Initialized in init_journal(). Never changed anymore.
+
+- wrapped_journal_sequence
+                        Initialized in init_journal(). Never changed anymore.
+
+- std::map<int, std::vector<Descriptor*> > block_to_descriptors_map;
+			New descriptors are added in add_block_descriptor(), which is called
+			from DescriptorTag::add_block_descriptors and DescriptorRevoke::add_block_descriptors,
+			which are called init_journal() while running over all_descriptors.
+			Never changed anymore.
+
+- std::map<int, Descriptor*> block_in_journal_to_descriptors_map;
+			New entries are added in add_block_in_journal_descriptor(), which is called
+			from DescriptorTag::add_block_descriptors, DescriptorRevoke::add_block_descriptors and
+			DescriptorCommit::add_block_descriptors, which are called init_journal() in the same loop.
+			Never changed anymore.
+
+- std::map<int, Transaction> sequence_transaction_map;
+			Initialized in init_journal() in the same loop. Never changed anymore.
+
+- std::map<int, int> block_to_dir_inode_map;
+			New elements are added, or an existing one is updated, in directory_inode_action(),
+			which is called from iterate_over_all_blocks_of() from init_journal(), in the same loop.
+
+* run_program(), command line option handling.
+
+- depth			Set to 1 at the start of print_directory() and incremented/decremented
+                        every iteration in filter_dir_entry().
+
+- S_min, S_max, S_bs, histo[], S_maxcount
+                        Initialized in hist_init(), called from run_program when --histogram is used.
+                        S_maxcount and histo[] are set to 0 initially in hist_init() and incremented
+                        in hist_add(), called from within a loop in run_program() following hist_init().
+
+* init_dir_inode_to_block_cache() [STAGE 1]
+  This function is called from init_directories() if the the stage1 file doesn't exist yet.
+  init_directories() is only executed once, subsequent invokation simply return immediately.
+  init_directories()                            is called from
+        init_files(),
+        dir_inode_to_block(), or
+        print_directory_inode().
+
+        init_files()                            is called from
+              dump_names()     (--dump-names or --restore-all),
+              show_hardlinks() (--show-hardlinks) and
+              restore_file()   (--restore-file (and --restore-all)).
+        dir_inode_to_block()                    is called from
+              filter_dir_entry(),
+              init_directories_action(),
+              print_directory_inode(),
+              extended_directory_action() and
+              init_directories().
+        print_directory_inode()                 is called from run_program() (--inode).
+
+              filter_dir_entry()                is called from
+                    iterate_over_directory()
+              init_directories_action()	is called from
+                    link_extended_directory_block_to_inode()
+                    init_directories().
+              extended_directory_action()       is called from
+                    init_directories()
+
+                    link_extended_directory_block_to_inode()    is called from
+                          init_directories().
+                    iterate_over_directory()                    is called from
+                          iterate_over_directory_action(),
+                          iterate_over_existing_directory_action(),
+                          DirectoryBlock::read_block(),
+                          print_directory(),
+                          link_extended_directory_block_to_inode() and
+                          init_directories().
+
+                          iterate_over_directory_action()               is called from
+                                filter_dir_entry().
+                          iterate_over_existing_directory_action        is called from
+                                filter_dir_entry().
+                          DirectoryBlock::read_block()                  is called from
+                                print_directory(),
+                                init_dir_inode_to_block_cache(),
+                                Directory::Directory(),
+                                link_extended_directory_block_to_inode() and
+                                init_directories().
+                          print_directory()                             is called from
+                                print_directory_action() and
+                                run_program() (--block).
+
+                                Directory::Directory()                  is called from
+                                      init_directories_action() and
+                                      init_directories().
+
+See http://groups.google.com/group/ext3grep/web/functions-generating-stage-1
 
 - dir_inode_to_block_cache, dir_inode_to_block_cache[]
+                        Allocated in init_dir_inode_to_block_cache()
+                        dir_inode_to_block_cache[] is initialized during stage 1 with directory start blocks.
+                        At the end of init_dir_inode_to_block_cache multiple blocks refering to the same inode
+                        are resolved as much as possible. Of course, dir_inode_to_block_cache[] is also
+                        initialized while reading one of the stage files.
+
 - std::vector<int> extended_blocks
+                        Initialized in init_dir_inode_to_block_cache() during stage 1, or when reading
+                        the stage 1 cache file.
+
+* init_directories() [STAGE 2]
 
 - std::map<std::string, Directory> all_directories
+			New elements are inserted during stage 2 in init_directories_action() or while loading stage 2.
+			init_directories_action() is called from iterate_over_directory(), from
+			init_directories() for the root directory start block, and then from
+			link_extended_directory_block_to_inode() called from a loop over extended_blocks after
+			that in init_directories().
+
 - std::map<uint32_t, all_directories_type::iterator> inode_to_directory
+			New elements are inserted during stage 2 in init_directories_action() or while loading stage 2.
+			See all_directories.
+
+* init_files()
+  This function is called from
+              dump_names()     (--dump-names or --restore-all),
+              show_hardlinks() (--show-hardlinks) and
+              restore_file()   (--restore-file (and --restore-all)).
+
+- std::map<int, std::vector<std::vector<DirEntry>::iterator> > inode_to_dir_entry
+			Initialized in init_files() from the dir entry vectors in the DirectoryBlock lists
+			in the Directory objects from all_directories.
 
 - std::map<std::string, int> path_to_inode_map
-- std::map<int, std::vector<std::vector<DirEntry>::iterator> > inode_to_dir_entry
+			Initialized in init_files() from the local arrays index_to_filename[] and file_dirblock_matrix[],
+			which are just before that generated from the dir entry vectors in the DirectoryBlock lists
+			in the Directory objects from all_directories.
 

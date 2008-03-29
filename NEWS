@@ -5,6 +5,7 @@ ext3grep-0.4.2
 	Treat any non-ASCII character as 'weird' in filenames, thus also values larger than 127.
 	Use unsigned long for bitmap_t instead of uint64_t.
 	Added README.globals with a description of the used global variables.
+	Added README.actions with a description of the used action functions.
 
 ext3grep-0.4.1
 

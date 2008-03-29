@@ -4934,10 +4934,6 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
       std::cout << ").\n";
       inode_to_directory_type::iterator iter = inode_to_directory.find(res.first->second.inode_number());
       ASSERT(iter != inode_to_directory.end());
-#ifdef CARLO_WOODS_CASE
-      if (iter->first == 360573)
-        std::cout << "1******: Erasing " << iter->first << " from inode_to_directory map!\n";
-#endif
       inode_to_directory.erase(iter);
       all_directories.erase(res.first);
       res = all_directories.insert(all_directories_type::value_type(parent->dirname(false), Directory(inode_number, first_block)));
@@ -4962,10 +4958,6 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
   }
   std::pair<inode_to_directory_type::iterator, bool> res2 =
       inode_to_directory.insert(inode_to_directory_type::value_type(inode_number, res.first));
-#ifdef CARLO_WOODS_CASE
-  if (inode_number == 360573)
-    std::cout << "1******: Attempt to insert inode " << inode_number << " in inode_to_directory " << (res2.second ? "succeeded" : "failed") << '\n';
-#endif
   if (!res2.second)	// Did we get here with this inode number before? Make sure the path is consistent!
   {
     if (inode_number == res2.first->second->second.inode_number() && res.first == res2.first->second)
@@ -4980,17 +4972,9 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
     if (new_path && !old_path)
     {
       std::cout << "Using \"" << parent->dirname(commandline_show_path_inodes) << "\" as \"" << res2.first->second->first << " doesn't exist in the locate database.\n";
-#ifdef CARLO_WOODS_CASE
-      if (res2.first->first == 360573)
-        std::cout << "1******: Erasing " << res2.first->first << " from inode_to_directory map!\n";
-#endif
       inode_to_directory.erase(res2.first);
       std::pair<inode_to_directory_type::iterator, bool> res3 =
 	  inode_to_directory.insert(inode_to_directory_type::value_type(inode_number, res.first));
-#ifdef CARLO_WOODS_CASE
-      if (inode_number == 360573)
-	std::cout << "2******: Attempt to insert inode " << inode_number << " in inode_to_directory " << (res3.second ? "succeeded" : "failed") << '\n';
-#endif
       ASSERT(res3.second);
     }
     else if (!new_path && old_path)
@@ -5431,10 +5415,6 @@ void init_directories(void)
       std::pair<all_directories_type::iterator, bool> res = all_directories.insert(all_directories_type::value_type(path.str(), Directory(inode)));
       ASSERT(res.second);
       std::pair<inode_to_directory_type::iterator, bool> res2 = inode_to_directory.insert(inode_to_directory_type::value_type(inode, res.first));
-#ifdef CARLO_WOODS_CASE
-      if (inode == 360573)
-	std::cout << "3******: Attempt to insert inode " << inode << " in inode_to_directory " << (res2.second ? "succeeded" : "failed") << '\n';
-#endif
       ASSERT(res2.second);
       std::vector<uint32_t> block_numbers;
       while(cache >> blocknr)

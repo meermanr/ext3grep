@@ -189,9 +189,8 @@ See http://groups.google.com/group/ext3grep/web/functions-generating-stage-1
 - std::map<std::string, Directory> all_directories
 			New elements are inserted during stage 2 in init_directories_action() or while loading stage 2.
 			init_directories_action() is called from iterate_over_directory(), from
-			init_directories() for the root directory start block, and then from
-			link_extended_directory_block_to_inode() called from a loop over extended_blocks after
-			that in init_directories().
+			init_directories() for the root directory blocks, and recursively from
+			init_directories_action() for extended directory blocks.
 
 - std::map<uint32_t, all_directories_type::iterator> inode_to_directory
 			New elements are inserted during stage 2 in init_directories_action() or while loading stage 2.

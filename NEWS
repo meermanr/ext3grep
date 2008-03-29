@@ -1,5 +1,8 @@
-ext3grep-0.4.2
+ext3grep-0.5.0
 
+	Add extended directory blocks in the order parent -> child, so that it does not happen
+	  anymore that some extended directory blocks couldn't be added because their parent
+	  directory wasn't added yet.
         Force recompile if CXXFLAGS changes.
 	Don't print any non-ASCII characters.
 	Treat any non-ASCII character as 'weird' in filenames, thus also values larger than 127.

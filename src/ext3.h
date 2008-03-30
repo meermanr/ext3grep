@@ -105,6 +105,12 @@ typedef ext2_dir_entry_2 ext3_dir_entry_2;
 
 #endif // !USE_KERNEL_HEADERS
 
+#ifndef USE_PCH
+#include <stdint.h>
+#endif
+
+extern uint32_t inode_count_;
+
 // This (POD) struct protects it's members so we
 // can do access control for debugging purposes.
 
@@ -131,6 +137,33 @@ struct Inode : protected ext3_inode {
     __u32 reserved2(void) const { return i_reserved2; }
 
     void set_reserved2(__u32 val) { i_reserved2 = val; }
+
+    // Returns true if this inode is part of an ORPHAN list.
+    // In that case, dtime is overloaded to point to the next orphan and contains an inode number.
+    bool is_orphan(void) const
+    {
+       // This relies on the fact that time_t is larger than the number of inodes.
+       // Assuming we might deal with files as old as five years, then this would
+       // go wrong for partitions larger than ~ 8 TB (assuming a block size of 4096
+       // and twice as many blocks as inodes).
+       return i_links_count == 0 && i_atime && i_dtime < i_atime && i_dtime <= inode_count_;
+    }
+
+    // This returns true if dtime() is expected to contain a date.
+    bool has_valid_dtime(void) const
+    {
+      return i_dtime && !is_orphan();
+    }
+
+    // This returns true if the inode appears to contain data refering to a previously
+    // deleted file, directory or symlink but does not contain the block list anymore.
+    // That means it will return false for orphan-ed inodes, although they are basically
+    // (partially) deleted.
+    bool is_deleted(void) const
+    {
+      return i_links_count == 0 && i_mode && (i_block[0] == 0 ||
+                                              !((i_mode & 0xf000) == 0x4000 || (i_mode & 0xf000) == 0x8000));
+    }
 };
 
 #endif // EXT3_H

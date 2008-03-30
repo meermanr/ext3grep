@@ -1607,8 +1607,9 @@ void run_program(void)
       for (int bit = 0, inode_number = ibase + 1; bit < inodes_per_group_; ++bit, ++inode_number)
       {
 	Inode& inode(get_inode(inode_number));
-	bool deleted = (inode.dtime() != 0);
-	if ((commandline_deleted || commandline_histogram == hist_dtime) && !deleted)
+	if (commandline_deleted && !inode.is_deleted())
+	  continue;
+	if ((commandline_histogram == hist_dtime || commandline_histogram == hist_group) && !inode.has_valid_dtime())
           continue;
 	if (commandline_directory && !is_directory(inode))
 	  continue;
@@ -1623,11 +1624,7 @@ void run_program(void)
 	}
 	time_t xtime = 0;
 	if (commandline_histogram == hist_dtime)
-	{
 	  xtime = inode.dtime();
-	  if (xtime == 0)
-	    continue;
-	}
 	else if (commandline_histogram == hist_atime)
 	{
 	  xtime = inode.atime();
@@ -2826,10 +2823,14 @@ static void print_inode_to(std::ostream& os, Inode& inode)
     os << mtime << " = " << std::ctime(&mtime);
   else
     os << "0\n";
-  time_t dtime = inode.dtime();
   os << "Deletion time:  ";
-  if (dtime > 0)
+  if (inode.has_valid_dtime())
+  {
+    time_t dtime = inode.dtime();
     os << dtime << " = " << std::ctime(&dtime);
+  }
+  else if (inode.is_orphan())
+    os << "ORPHAN (next inode: " << inode.dtime() << ")\n";
   else
     os << "0\n";
   //os << "File flags: " << inode.flags() << '\n';
@@ -3054,16 +3055,17 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
   {
     inode = &get_inode(dir_entry.inode);
     allocated = is_allocated(dir_entry.inode);
-    reallocated = (deleted && allocated) || (deleted && inode->dtime() == 0) || (feature_incompat_filetype && mode_map[file_type] != (inode->mode() & 0xf000));
-    deleted = deleted || inode->dtime();
+    reallocated = (deleted && allocated) || (deleted && !inode->is_deleted()) || (feature_incompat_filetype && mode_map[file_type] != (inode->mode() & 0xf000));
+    deleted = deleted || inode->is_deleted();
     // Block pointers are erased on ext3 on deletion (that is the whole point of writing this tool!),
     // however - in the case of symlinks, the name of the symlink is (still) in this place.
-    if (!is_symlink(*inode) && inode->dtime() != 0 && inode->block()[0] != 0)
+    if (inode->has_valid_dtime() && inode->block()[0] != 0 && !is_symlink(*inode))
     {
       time_t dtime = inode->dtime();
       std::string dtime_str(std::ctime(&dtime));
-      std::cout << "WARNING: Inode " << dir_entry.inode << " has non-zero dtime (" << inode->dtime() <<
-	  "  " << dtime_str.substr(0, dtime_str.length() - 1) << ") but non-zero block list (" << inode->block()[0] << ").\n";
+      std::cout << "Note: Inode " << dir_entry.inode << " has non-zero dtime (" << inode->dtime() <<
+	  "  " << dtime_str.substr(0, dtime_str.length() - 1) << ") but non-zero block list (" << inode->block()[0] <<
+	  ") [ext3grep does" << (inode->is_deleted() ? "" : " not") << " consider this inode to be deleted]\n";
     }
     filtered = !(
 	(!commandline_allocated || allocated) &&
@@ -3071,8 +3073,9 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
 	(!commandline_deleted || deleted) &&
 	(!commandline_directory || is_directory(*inode)) &&
 	(!reallocated || commandline_reallocated) &&
-	(reallocated || (inode->dtime() == 0 && !commandline_deleted) ||
-	       (commandline_after <= (time_t)inode->dtime() && (!commandline_before || (time_t)inode->dtime() < commandline_before))));
+	(reallocated ||
+	    (!inode->is_deleted() && !commandline_deleted) ||
+	    (inode->has_valid_dtime() && commandline_after <= (time_t)inode->dtime() && (!commandline_before || (time_t)inode->dtime() < commandline_before))));
   }
   if (no_filtering)	// Also no recursion.
     action(dir_entry, *inode, deleted, allocated, reallocated, zero_inode, linked, filtered, parent, data);
@@ -3127,13 +3130,14 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
 	  {
 	    if (!parent_iter)
 	      break;
-	    dtime = parent_iter->M_inode->dtime();
+	    if (parent_iter->M_inode->has_valid_dtime())
+	      dtime = parent_iter->M_inode->dtime();
 	    parent_iter = parent_iter->M_parent;
 	  }
 	  // It turns out that a parent can be time-stamped as deleted before
 	  // it's subdirectories when using rm -rf (?). Allow for 60 seconds
 	  // of time difference.
-	  if (!dtime || dtime + 60 >= inode->dtime())
+	  if (!dtime || !inode->has_valid_dtime() || dtime + 60 >= inode->dtime())
 	  {
 	    // Now, before actually processing this new directory, check if the inode it contains for ".." is equal to the inode
 	    // of it's parent directory!
@@ -3400,7 +3404,7 @@ void DirEntry::print(void) const
     {
       time_t dtime = inode->dtime();
       std::string dtime_str(ctime(&dtime));
-      std::cout << ' ' << std::setw(10) << inode->dtime() << ' ' << dtime_str.substr(0, dtime_str.length() - 1);
+      std::cout << ' ' << std::setw(10) << dtime << ' ' << dtime_str.substr(0, dtime_str.length() - 1);
     }
   }
   if (zero_inode && linked)
@@ -3917,6 +3921,7 @@ static void init_journal(void)
   ASSERT(all_descriptors.size() == number_of_descriptors);
   ASSERT(number_of_descriptors == 0 || all_descriptors[number_of_descriptors - 1]->descriptor_type() != dt_unknown);
   // Sort the descriptors in ascending sequence number.
+  std::cout << " sorting..." << std::flush;
   std::sort(all_descriptors.begin(), all_descriptors.end(), AllDescriptorsPred());
   for (std::vector<Descriptor*>::iterator iter = all_descriptors.begin(); iter != all_descriptors.end(); ++iter)
   {
@@ -3974,7 +3979,7 @@ static void init_journal(void)
 	if (!is_directory(inode[i]))
 	  continue;
         // Skip deleted inodes.
-        if (inode[i].dtime() != 0 || inode[i].atime() == 0 || inode[i].block()[0] == 0)
+        if (inode[i].is_deleted())
 	  continue;
 #ifdef CPPGRAPH
         // Tell cppgraph that we call directory_inode_action from here.
@@ -5799,7 +5804,7 @@ enum get_undeleted_inode_type {
 get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence = NULL)
 {
   Inode& real_inode(get_inode(inodenr));
-  if (real_inode.dtime() == 0)
+  if (!real_inode.is_deleted())
   {
     inode = real_inode;
     return ui_real_inode;
@@ -5809,7 +5814,7 @@ get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* seq
   for (std::vector<std::pair<int, Inode> >::iterator iter = inodes.begin(); iter != inodes.end(); ++iter)
   {
     Inode& journal_inode(iter->second);
-    if (journal_inode.dtime() == 0)
+    if (!journal_inode.is_deleted())
     {
       inode = journal_inode;
       if (sequence)
@@ -6071,7 +6076,7 @@ void restore_file(std::string const& outfile)
         std::cout << "Not undeleting \"" << outfile << "\" because it was deleted before " << commandline_after << " (" << inode.ctime() << ")\n";
       return;
     }
-    ASSERT(inode.dtime() == 0);
+    ASSERT(!inode.is_deleted());
     if (is_regular_file(inode))
     {
       std::ofstream out;

@@ -11,6 +11,7 @@ ext3grep-0.5.0
 	Added README.globals with a description of the used global variables.
 	Added README.actions with a description of the used action functions.
 	Allow locate database include files without first listing the parent directory.
+	Handle orphaned inodes correctly.
 
 ext3grep-0.4.1
 

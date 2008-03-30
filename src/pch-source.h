@@ -1,6 +1,7 @@
 #define USE_PCH
 #include "sys.h"
 #include <sys/types.h>
+#include <stdint.h>
 #include <asm/byteorder.h>
 #include "ext3.h"
 #include <sys/time.h>

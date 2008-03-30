@@ -78,7 +78,9 @@ void load_locate_data(void)
     if (pos != std::string::npos)
     {
       std::string dirname = line.substr(0, pos); 
-      locatepaths_type::iterator locatepath_iter = locatepaths.find(dirname);
+      // Use insert, in case the parent directory wasn't seen first.
+      // Since it's a set, it will only be inserted if it isn't already there.
+      locatepaths_type::iterator locatepath_iter = locatepaths.insert(LocatePath(dirname)).first;
       locatepath_iter->set_certainly_directory();
       std::string filename = line.substr(pos + 1);
       filename_to_locatepath_map_type::iterator iter = filename_to_locatepath_map.find(filename);

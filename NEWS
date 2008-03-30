@@ -1,5 +1,6 @@
 ext3grep-0.5.0
 
+	Set the correct modification time on files.
 	Add extended directory blocks in the order parent -> child, so that it does not happen
 	  anymore that some extended directory blocks couldn't be added because their parent
 	  directory wasn't added yet.

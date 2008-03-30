@@ -6052,7 +6052,7 @@ void restore_file(std::string const& outfile)
     }
     struct utimbuf ub;
     ub.actime = real_inode.atime();
-    ub.modtime = real_inode.ctime();
+    ub.modtime = real_inode.mtime();
     if (utime(outputdir_outfile.c_str(), &ub) == -1)
     {
       int error = errno;
@@ -6103,7 +6103,7 @@ void restore_file(std::string const& outfile)
       }
       struct utimbuf ub;
       ub.actime = inode.atime();
-      ub.modtime = inode.ctime();
+      ub.modtime = inode.mtime();
       if (utime(outputdir_outfile.c_str(), &ub) == -1)
       {
 	int error = errno;
@@ -6131,7 +6131,7 @@ void restore_file(std::string const& outfile)
 	struct timeval tvp[2];
 	tvp[0].tv_sec = inode.atime();
 	tvp[0].tv_usec = 0;
-	tvp[1].tv_sec = inode.ctime();
+	tvp[1].tv_sec = inode.mtime();
 	tvp[1].tv_usec = 0;
         if (lutimes(outputdir_outfile.c_str(), tvp) == -1)
 	{

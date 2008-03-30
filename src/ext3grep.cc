@@ -420,7 +420,7 @@ void init_consts()
 
 void load_meta_data(int group);
 
-inline Inode& get_inode(int inode)
+inline Inode& get_inode(uint32_t inode)
 {
   int group = (inode - 1) / inodes_per_group_;
   unsigned int bit = inode - 1 - group * inodes_per_group_;
@@ -2917,7 +2917,8 @@ std::string Parent::dirname(bool show_inodes) const
   else
   {
     for (Parent const* lparent = M_parent; lparent->M_dir_entry; lparent = lparent->M_parent)
-      path = std::string(lparent->M_dir_entry->name, lparent->M_dir_entry->name_len) + '/' + path;
+      if (lparent->M_dir_entry->name_len > 0)
+	path = std::string(lparent->M_dir_entry->name, lparent->M_dir_entry->name_len) + '/' + path;
   }
   return path;
 }
@@ -5021,10 +5022,7 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
 	  iterate_over_directory__with__init_directories_action();
 #endif
 	  // Iterate over all directory blocks that we can reach.
-	  int depth_store = commandline_depth;
-	  commandline_depth = 10000;
 	  iterate_over_directory(block_buf, blocknr, init_directories_action, &parent, data);
-	  commandline_depth = depth_store;
 	}
 	delete [] block_buf;
       }
@@ -5277,41 +5275,55 @@ void init_directories(void)
 
     // Initialize root_extended_blocks to be the extended directory blocks of the root.
     blocknr_vector_type root_extended_blocks;
-    int last_extended_block_index = 0;
+    int root_extended_blocks_size = 0;
     inode_to_extended_blocks_map_type::iterator root_extended_blocks_iter = inode_to_extended_blocks_map.find(EXT3_ROOT_INO);
     if (root_extended_blocks_iter != inode_to_extended_blocks_map.end())
     {
       root_extended_blocks = root_extended_blocks_iter->second;
-      last_extended_block_index = root_extended_blocks.size();
-      ASSERT(last_extended_block_index > 0);
+      root_extended_blocks_size = root_extended_blocks.size();
+      ASSERT(root_extended_blocks_size > 0);
     }
 
-    for(;;)
-    {
-      // Get the contents of this block of the root directory.
-      get_block(root_blocknr, block_buf);
-
-      // Iterate over all directory blocks.
-      int depth_store = commandline_depth;
-      commandline_depth = 10000;
 #ifdef CPPGRAPH
       // Let cppgraph know that we call init_directories_action from here.
       iterate_over_directory__with__init_directories_action();
 #endif
+
+    // First run over all root directory blocks depth 1, so that we are sure we found "lost+found".
+    int last_extended_block_index = root_extended_blocks_size;
+    for(int blocknr = root_blocknr;; blocknr = root_extended_blocks[--last_extended_block_index])
+    {
+      // Get the contents of this block of the root directory.
+      get_block(blocknr, block_buf);
+      // Iterate over all directory blocks.
+      int depth_store = commandline_depth;
+      commandline_depth = 1;
       iterate_over_directory(block_buf, root_blocknr, init_directories_action, &parent, &inode_to_extended_blocks_map);
       commandline_depth = depth_store;
-
       if (last_extended_block_index == 0)
         break;
+    }
 
-      // Get next (extended) directory block.
-      root_blocknr = root_extended_blocks[--last_extended_block_index];
+    all_directories_type::iterator lost_plus_found_directory_iter = all_directories.find("lost+found");
+    ASSERT(lost_plus_found_directory_iter != all_directories.end());
+
+    // Next run over all directory blocks recursively.
+    last_extended_block_index = root_extended_blocks_size;
+    for(int blocknr = root_blocknr;; blocknr = root_extended_blocks[--last_extended_block_index])
+    {
+      // Get the contents of this block of the root directory.
+      get_block(blocknr, block_buf);
+      // Iterate over all directory blocks.
+      int depth_store = commandline_depth;
+      commandline_depth = 10000;
+      iterate_over_directory(block_buf, root_blocknr, init_directories_action, &parent, &inode_to_extended_blocks_map);
+      commandline_depth = depth_store;
+      if (last_extended_block_index == 0)
+        break;
     }
 
     // Add all remaining extended directory blocks to lost+found.
     // Also free memory of inode_to_extended_blocks_map.
-    all_directories_type::iterator lost_plus_found_directory_iter = all_directories.find("lost+found");
-    ASSERT(lost_plus_found_directory_iter != all_directories.end());
     for (inode_to_extended_blocks_map_type::iterator iter = inode_to_extended_blocks_map.begin(); iter != inode_to_extended_blocks_map.end(); ++iter)
     {
       uint32_t inode_number = iter->first;

@@ -3366,9 +3366,16 @@ class Directory {
   private:
     uint32_t M_inode_number;
     std::list<DirectoryBlock> M_blocks;
+#ifdef DEBUG
+    bool M_extended_blocks_added;
+#endif
 
   public:
-    Directory(uint32_t inode_number) : M_inode_number(inode_number) { }
+    Directory(uint32_t inode_number) : M_inode_number(inode_number)
+#ifdef DEBUG
+        , M_extended_blocks_added(false)
+#endif
+        { }
     Directory(uint32_t inode_number, int first_block);
 
   std::list<DirectoryBlock>& blocks(void) { return M_blocks; }
@@ -3376,6 +3383,11 @@ class Directory {
 
   uint32_t inode_number(void) const { return M_inode_number; }
   int first_block(void) const { ASSERT(!M_blocks.empty()); return M_blocks.begin()->block(); }
+#ifdef DEBUG
+  bool extended_blocks_added(void) const { return M_extended_blocks_added; }
+
+  void set_extended_blocks_added(void) { M_extended_blocks_added = true; }
+#endif
 };
 
 //-----------------------------------------------------------------------------
@@ -4867,6 +4879,9 @@ typedef std::map<uint32_t, all_directories_type::iterator> inode_to_directory_ty
 inode_to_directory_type inode_to_directory;
 
 Directory::Directory(uint32_t inode_number, int first_block) : M_inode_number(inode_number), M_blocks(1)
+#ifdef DEBUG
+    , M_extended_blocks_added(false)
+#endif
 {
   std::list<DirectoryBlock>::iterator iter = M_blocks.begin();
   iter->read_block(first_block, iter);
@@ -4874,7 +4889,7 @@ Directory::Directory(uint32_t inode_number, int first_block) : M_inode_number(in
 
 typedef std::map<uint32_t, blocknr_vector_type> inode_to_extended_blocks_map_type;
 
-bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bool, bool, bool, bool, bool, Parent* parent, void* data)
+bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bool, bool, bool, bool, bool, Parent* parent, void*)
 {
   // Get the inode number.
   uint32_t const inode_number = dir_entry.inode;
@@ -4991,51 +5006,6 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
     else if (!new_path && !old_path)
       std::cout << "WARNING: Neither exist in the locate database (you might want to add one). Keeping \"" << res2.first->second->first << "\".\n";
     ASSERT(!(new_path && old_path));
-  }
-  else	// First time we see this inode. Also run over all extended directory blocks if any.
-  	// By doing this here, we are 100% sure that inode_to_directory already contains the inode.
-  {
-    inode_to_extended_blocks_map_type& inode_to_extended_blocks_map(*reinterpret_cast<inode_to_extended_blocks_map_type*>(data));
-    inode_to_extended_blocks_map_type::iterator iter = inode_to_extended_blocks_map.find(inode_number);
-    if (iter != inode_to_extended_blocks_map.end())
-    {
-      blocknr_vector_type bv = iter->second;
-      int const size = bv.size();
-      if (size > 0)
-      {
-	unsigned char* block_buf = new unsigned char [block_size_];
-	for (int j = 0; j < size; ++j)
-	{
-	  int blocknr = bv[j];
-	  get_block(blocknr, block_buf);
-
-	  // Add extended directory as DirectoryBlock to the corresponding Directory.
-	  res.first->second.blocks().push_back(DirectoryBlock());
-	  std::list<DirectoryBlock>::iterator directory_block_iter = res.first->second.blocks().end();
-	  --directory_block_iter;
-	  directory_block_iter->read_block(blocknr, directory_block_iter);
-
-	  // Set up a Parent object that will return the correct dirname.
-	  ext3_dir_entry_2 fake_dir_entry;
-	  fake_dir_entry.inode = inode_number;
-	  fake_dir_entry.rec_len = 0;	// Not used
-	  fake_dir_entry.file_type = 0; // Not used
-	  fake_dir_entry.name_len = res.first->first.size();
-	  strncpy(fake_dir_entry.name, res.first->first.c_str(), fake_dir_entry.name_len);
-	  static Inode fake_inode;	// Will be filled with zeroes so that has_valid_dtime() returns false.
-	  Parent dummy_parent(&fake_inode, 0);
-	  Parent parent(&dummy_parent, &fake_dir_entry, &get_inode(inode_number), inode_number);
-	  ASSERT(parent.dirname(false) == std::string(res.first->first));
-#ifdef CPPGRAPH
-	  // Let cppgraph know that we call init_directories_action from here.
-	  iterate_over_directory__with__init_directories_action();
-#endif
-	  // Iterate over all directory blocks that we can reach.
-	  iterate_over_directory(block_buf, blocknr, init_directories_action, &parent, data);
-	}
-	delete [] block_buf;
-      }
-    }
   }
   return false;
 }
@@ -5298,7 +5268,7 @@ void init_directories(void)
       iterate_over_directory__with__init_directories_action();
 #endif
 
-    // Run over all directory blocks and construct all_directories and inode_to_directory.
+    // Run over all directory blocks and add all start blocks to all_directories, updating inode_to_directory.
     int last_extended_block_index = root_extended_blocks_size;
     for(int blocknr = root_blocknr;; blocknr = root_extended_blocks[--last_extended_block_index])
     {
@@ -5307,11 +5277,76 @@ void init_directories(void)
       // Iterate over all directory blocks.
       int depth_store = commandline_depth;
       commandline_depth = 10000;
-      iterate_over_directory(block_buf, root_blocknr, init_directories_action, &parent, &inode_to_extended_blocks_map);
+      iterate_over_directory(block_buf, root_blocknr, init_directories_action, &parent, NULL);
       commandline_depth = depth_store;
       if (last_extended_block_index == 0)
         break;
     }
+
+    // Next, add all extended directory blocks.
+    for (all_directories_type::iterator dir_iter = all_directories.begin(); dir_iter != all_directories.end(); ++dir_iter)
+    {
+#ifdef DEBUG
+      ASSERT(!dir_iter->second.extended_blocks_added());
+#endif
+      uint32_t inode_number = dir_iter->second.inode_number();
+
+      inode_to_extended_blocks_map_type::iterator iter = inode_to_extended_blocks_map.find(inode_number);
+      if (iter != inode_to_extended_blocks_map.end())
+      {
+	blocknr_vector_type bv = iter->second;
+	int const size = bv.size();
+	if (size > 0)
+	{
+	  std::cout << "Adding extended directory block(s) for directory \"" << dir_iter->first << "\"." << std::endl;
+	  unsigned char* block_buf = new unsigned char [block_size_];
+	  for (int j = 0; j < size; ++j)
+	  {
+	    int blocknr = bv[j];
+	    get_block(blocknr, block_buf);
+
+	    // Add extended directory as DirectoryBlock to the corresponding Directory.
+	    dir_iter->second.blocks().push_back(DirectoryBlock());
+	    std::list<DirectoryBlock>::iterator directory_block_iter = dir_iter->second.blocks().end();
+	    --directory_block_iter;
+	    directory_block_iter->read_block(blocknr, directory_block_iter);
+
+	    // Set up a Parent object that will return the correct dirname.
+	    ext3_dir_entry_2 fake_dir_entry;
+	    fake_dir_entry.inode = inode_number;
+	    fake_dir_entry.rec_len = 0;	// Not used
+	    fake_dir_entry.file_type = 0; // Not used
+	    fake_dir_entry.name_len = dir_iter->first.size();
+	    strncpy(fake_dir_entry.name, dir_iter->first.c_str(), fake_dir_entry.name_len);
+	    static Inode fake_inode;	// Will be filled with zeroes so that has_valid_dtime() returns false.
+	    Parent dummy_parent(&fake_inode, 0);
+	    Parent parent(&dummy_parent, &fake_dir_entry, &get_inode(inode_number), inode_number);
+	    ASSERT(parent.dirname(false) == dir_iter->first);
+	    // Iterate over all directory blocks that we can reach.
+	    int depth_store = commandline_depth;
+	    commandline_depth = 10000;
+	    iterate_over_directory(block_buf, blocknr, init_directories_action, &parent, NULL);
+	    commandline_depth = depth_store;
+	  }
+	  delete [] block_buf;
+	}
+      }
+#ifdef DEBUG
+      dir_iter->second.set_extended_blocks_added();
+#endif
+    }
+#ifdef DEBUG
+    // The block inside the above loop adds new elements to all_directories. If those are
+    // added AFTER dir_iter then there is no problem because std::map iterators aren't
+    // invalidated by insertion and they will be taken into account later in the
+    // same loop. If dir_iter points to a Directory with a path a/b/c then inode_number 
+    // is the inode number of that 'c' directory. Extended blocks of that directory
+    // only add "." dir entries for recursively found directories, ie a/b/c/d and
+    // are therefore inserted after the current element and processed automatically
+    // in the same loop. Therefore, the following should hold:
+    for (all_directories_type::iterator dir_iter = all_directories.begin(); dir_iter != all_directories.end(); ++dir_iter)
+      ASSERT(dir_iter->second.extended_blocks_added());
+#endif
 
     all_directories_type::iterator lost_plus_found_directory_iter = all_directories.find("lost+found");
     ASSERT(lost_plus_found_directory_iter != all_directories.end());

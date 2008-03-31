@@ -24,7 +24,7 @@
 #ifndef USE_PCH
 #include "sys.h"
 #include <sys/types.h>
-#include <asm/byteorder.h>
+#include <endian.h>
 #include "ext3.h"
 #include <utime.h>
 #include <sys/mman.h>
@@ -52,6 +52,17 @@
 #include "locate.h"
 #ifdef DEBUG
 #include "backtrace.h"
+#endif
+
+#if !USE_KERNEL_HEADERS
+// We keep using these types for clarity (to know when something is little endian and when big endian on DISK).
+// ext3grep assumes uint16_t and uint32_t to be little endian (intel cpu).
+typedef uint16_t __le16;
+typedef uint16_t __be16;
+typedef uint32_t __le32;
+typedef uint32_t __be32;
+static inline uint32_t __be32_to_cpu(__be32 x) { return x << 24 | x >> 24 | (x & (uint32_t)0x0000ff00UL) << 8 | (x & (uint32_t)0x00ff0000UL) >> 8; }
+static inline uint16_t __be16_to_cpu(__be16 x) { return x << 8 | x >> 8; }
 #endif
 
 // Super block accessors.

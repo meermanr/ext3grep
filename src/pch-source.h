@@ -2,7 +2,7 @@
 #include "sys.h"
 #include <sys/types.h>
 #include <stdint.h>
-#include <asm/byteorder.h>
+#include <endian.h>
 #include "ext3.h"
 #include <sys/time.h>
 #include <sys/stat.h>

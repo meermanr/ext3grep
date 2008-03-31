@@ -4942,6 +4942,7 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
       std::cout << ").\n";
       inode_to_directory_type::iterator iter = inode_to_directory.find(res.first->second.inode_number());
       ASSERT(iter != inode_to_directory.end());
+      ASSERT(iter->second == res.first);
       inode_to_directory.erase(iter);
       all_directories.erase(res.first);
       res = all_directories.insert(all_directories_type::value_type(parent->dirname(false), Directory(inode_number, first_block)));
@@ -4988,7 +4989,7 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
     else if (!new_path && old_path)
       std::cout << "Keeping \"" << res2.first->second->first << "\" as \"" << parent->dirname(commandline_show_path_inodes) << " doesn't exist in the locate database.\n";
     else if (!new_path && !old_path)
-      std::cout << "Neither exist in the locate database. Keeping \"" << res2.first->second->first << "\".\n";
+      std::cout << "WARNING: Neither exist in the locate database (you might want to add one). Keeping \"" << res2.first->second->first << "\".\n";
     ASSERT(!(new_path && old_path));
   }
   else	// First time we see this inode. Also run over all extended directory blocks if any.

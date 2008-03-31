@@ -12,6 +12,9 @@ ext3grep-0.5.0
 	Added README.actions with a description of the used action functions.
 	Allow locate database include files without first listing the parent directory.
 	Handle orphaned inodes correctly.
+	Fixed the reported segfault with backtrace:
+	  #0  0x0000000000419084 in Inode::dtime (this=0x0) at ./ext3.h:118
+	  #1  0x000000000041168b in filter_dir_entry (...
 
 ext3grep-0.4.1
 

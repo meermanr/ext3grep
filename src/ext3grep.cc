@@ -3059,7 +3059,9 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
     deleted = deleted || inode->is_deleted();
     // Block pointers are erased on ext3 on deletion (that is the whole point of writing this tool!),
     // however - in the case of symlinks, the name of the symlink is (still) in this place.
-    if (inode->has_valid_dtime() && inode->block()[0] != 0 && !is_symlink(*inode))
+    // Only printing this for regular files and directories, as also char/block devices seem to
+    // sometimes have a non-zero block list, and we don't "recover" those anyway.
+    if (inode->has_valid_dtime() && inode->block()[0] != 0 && (is_regular_file(*inode) || is_directory(*inode)))
     {
       time_t dtime = inode->dtime();
       std::string dtime_str(std::ctime(&dtime));
@@ -5019,7 +5021,8 @@ bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bo
 	  fake_dir_entry.file_type = 0; // Not used
 	  fake_dir_entry.name_len = res.first->first.size();
 	  strncpy(fake_dir_entry.name, res.first->first.c_str(), fake_dir_entry.name_len);
-	  Parent dummy_parent(NULL, 0);
+	  static Inode fake_inode;	// Will be filled with zeroes so that has_valid_dtime() returns false.
+	  Parent dummy_parent(&fake_inode, 0);
 	  Parent parent(&dummy_parent, &fake_dir_entry, &get_inode(inode_number), inode_number);
 	  ASSERT(parent.dirname(false) == std::string(res.first->first));
 #ifdef CPPGRAPH
@@ -5294,26 +5297,8 @@ void init_directories(void)
       iterate_over_directory__with__init_directories_action();
 #endif
 
-    // First run over all root directory blocks depth 1, so that we are sure we found "lost+found".
+    // Run over all directory blocks and construct all_directories and inode_to_directory.
     int last_extended_block_index = root_extended_blocks_size;
-    for(int blocknr = root_blocknr;; blocknr = root_extended_blocks[--last_extended_block_index])
-    {
-      // Get the contents of this block of the root directory.
-      get_block(blocknr, block_buf);
-      // Iterate over all directory blocks.
-      int depth_store = commandline_depth;
-      commandline_depth = 1;
-      iterate_over_directory(block_buf, root_blocknr, init_directories_action, &parent, &inode_to_extended_blocks_map);
-      commandline_depth = depth_store;
-      if (last_extended_block_index == 0)
-        break;
-    }
-
-    all_directories_type::iterator lost_plus_found_directory_iter = all_directories.find("lost+found");
-    ASSERT(lost_plus_found_directory_iter != all_directories.end());
-
-    // Next run over all directory blocks recursively.
-    last_extended_block_index = root_extended_blocks_size;
     for(int blocknr = root_blocknr;; blocknr = root_extended_blocks[--last_extended_block_index])
     {
       // Get the contents of this block of the root directory.
@@ -5326,6 +5311,9 @@ void init_directories(void)
       if (last_extended_block_index == 0)
         break;
     }
+
+    all_directories_type::iterator lost_plus_found_directory_iter = all_directories.find("lost+found");
+    ASSERT(lost_plus_found_directory_iter != all_directories.end());
 
     // Add all remaining extended directory blocks to lost+found.
     // Also free memory of inode_to_extended_blocks_map.

@@ -37,6 +37,7 @@
 #include <iostream>
 #include <iomanip>
 #include <cstdlib>
+#include <sstream>
 #include <unistd.h>
 #include "debug.h"
 #endif

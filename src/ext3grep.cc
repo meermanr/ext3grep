@@ -46,6 +46,7 @@
 #include <limits>
 #include <sstream>
 #include <bitset>
+#include <algorithm>
 #include "debug.h"
 #endif
 

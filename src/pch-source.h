@@ -40,6 +40,7 @@
 #include <string>
 #include <vector>
 #include <bitset>
+#include <algorithm>
 #include "debug.h"
 #ifdef CWDEBUG
 #include <libcwd/buf2str.h>

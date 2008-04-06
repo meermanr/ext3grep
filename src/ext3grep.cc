@@ -446,8 +446,6 @@ void inode_mmap(int group)
 {
   if (all_inodes[group])
     return;
-  if (!block_bitmap[group])
-    load_meta_data(group);
 
   int block_number = group_descriptor_table[group].bg_inode_table;
   int const blocks_per_page = page_size_ / block_size_;

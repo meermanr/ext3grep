@@ -405,6 +405,8 @@ void init_consts()
   // Global arrays of pointers.
   all_inodes = new Inode* [groups_];
 #if USE_MMAP
+  // We use this array to know of which groups we mmapped. Therefore zero it out.
+  std::memset(all_inodes, 0, sizeof(Inode*) * groups_);
   all_mmaps = new void* [groups_];
 #endif
   block_bitmap = new bitmap_t* [groups_];

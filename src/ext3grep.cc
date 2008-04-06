@@ -432,13 +432,53 @@ void init_consts()
 
 void load_meta_data(int group);
 
+#if USE_MMAP
+void inode_unmap(int group)
+{
+  if (all_inodes[group])
+  {
+    munmap(all_mmaps[group], inodes_per_group_ * inode_size_ + ((char*)all_inodes[group] - (char*)all_mmaps[group]));
+    all_inodes[group] = NULL;
+  }
+}
+
+void inode_mmap(int group)
+{
+  if (all_inodes[group])
+    return;
+  if (!block_bitmap[group])
+    load_meta_data(group);
+
+  int block_number = group_descriptor_table[group].bg_inode_table;
+  int const blocks_per_page = page_size_ / block_size_;
+  off_t page = block_number / blocks_per_page;
+  off_t page_aligned_offset = page * page_size_;
+  off_t offset = block_to_offset(block_number);
+
+  all_mmaps[group] = mmap(NULL, inodes_per_group_ * inode_size_ + (offset - page_aligned_offset),
+      PROT_READ, MAP_PRIVATE | MAP_NORESERVE, device_fd, page_aligned_offset);
+  if (all_mmaps[group] == MAP_FAILED)
+  {
+    std::cerr << progname << ": mmap: " << strerror(errno) << std::endl;
+    ASSERT(all_mmaps[group] != MAP_FAILED);
+  }
+
+  all_inodes[group] = reinterpret_cast<Inode*>((char*)all_mmaps[group] + (offset - page_aligned_offset));
+}
+#endif
+
 inline Inode& get_inode(uint32_t inode)
 {
   int group = (inode - 1) / inodes_per_group_;
   unsigned int bit = inode - 1 - group * inodes_per_group_;
   ASSERT(bit < 8U * block_size_);
+#if USE_MMAP
+  if (all_inodes[group] == NULL)
+    inode_mmap(group);
+#else
   if (block_bitmap[group] == NULL)
     load_meta_data(group);
+#endif
   return all_inodes[group][bit];
 }
 
@@ -1127,6 +1167,7 @@ bool iterate_over_all_blocks_of(Inode& inode, void (*action)(int, void*), void* 
 // load_meta_data
 //
 
+#if !USE_MMAP
 void load_inodes(int group)
 {
   DoutEntering(dc::notice, "load_inodes(" << group << ")");
@@ -1134,16 +1175,6 @@ void load_inodes(int group)
     load_meta_data(group);
   // The start block of the inode table.
   int block_number = group_descriptor_table[group].bg_inode_table;
-#if USE_MMAP
-  int const blocks_per_page = page_size_ / block_size_;
-  off_t page = block_number / blocks_per_page;
-  off_t page_aligned_offset = page * page_size_;
-  off_t offset = block_to_offset(block_number);
-  // Use mmap to avoid running out of memory.
-  all_mmaps[group] = mmap(NULL, inodes_per_group_ * inode_size_ + (offset - page_aligned_offset),
-          PROT_READ, MAP_PRIVATE | MAP_NORESERVE, device_fd, page_aligned_offset);
-  all_inodes[group] = reinterpret_cast<Inode*>((char*)all_mmaps[group] + (offset - page_aligned_offset));
-#else
   // Load all inodes into memory.
   all_inodes[group] = new Inode[inodes_per_group_];	// sizeof(Inode) == inode_size_
   device.seekg(block_to_offset(block_number));
@@ -1156,8 +1187,8 @@ void load_inodes(int group)
   for (int ino = 0; ino < inodes_per_group_; ++ino)
     all_inodes[group][ino].set_reserved2(ino + 1 + group * inodes_per_group_);
 #endif
-#endif
 }
+#endif
 
 void load_meta_data(int group)
 {
@@ -1176,8 +1207,10 @@ void load_meta_data(int group)
   ASSERT(device.good());
   device.read(reinterpret_cast<char*>(inode_bitmap[group]), block_size_);
   ASSERT(device.good());
+#if !USE_MMAP
   // Load all inodes into memory.
   load_inodes(group);
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -1803,12 +1836,14 @@ void run_program(void)
       {
 	delete [] inode_bitmap[group];
 	delete [] block_bitmap[group];
-#if USE_MMAP
-        munmap(all_mmaps[group], inodes_per_group_ * inode_size_ + ((char*)all_inodes[group] - (char*)all_mmaps[group]));
-#else
+#if !USE_MMAP
 	delete [] all_inodes[group];
 #endif
       }
+#if USE_MMAP
+      if (all_inodes[group])
+	inode_unmap(group);
+#endif
     }
     delete [] inode_bitmap;
     delete [] block_bitmap;

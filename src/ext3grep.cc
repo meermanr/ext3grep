@@ -1027,11 +1027,8 @@ unsigned int const indirect_bit = 2;		// Call action() for (double/tripple) indi
 
 bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int)
 {
-  static bool using_static_buffer = false;
-  ASSERT(!using_static_buffer);
-  static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
+  unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
-  using_static_buffer = true;
   unsigned int i = 0;
   while (i < block_size_ / sizeof(__le32))
   {
@@ -1043,17 +1040,13 @@ bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, vo
     }
     ++i;
   }
-  using_static_buffer = false;
   return i < block_size_ / sizeof(__le32);
 }
 
 bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask)
 {
-  static bool using_static_buffer = false;
-  ASSERT(!using_static_buffer);
-  static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
+  unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
-  using_static_buffer = true;
   unsigned int i = 0;
   while (i < block_size_ / sizeof(__le32))
   {
@@ -1069,17 +1062,13 @@ bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(
     }
     ++i;
   }
-  using_static_buffer = false;
   return i < block_size_ / sizeof(__le32);
 }
 
 bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask)
 {
-  static bool using_static_buffer = false;
-  ASSERT(!using_static_buffer);
-  static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
+  unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
-  using_static_buffer = true;
   unsigned int i = 0;
   while (i < block_size_ / sizeof(__le32))
   {
@@ -1094,7 +1083,6 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)
     }
     ++i;
   }
-  using_static_buffer = false;
   return i < block_size_ / sizeof(__le32);
 }
 

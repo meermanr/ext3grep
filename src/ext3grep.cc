@@ -5475,31 +5475,36 @@ void init_directories(void)
     ASSERT(!dir_inode_to_block_cache);
     dir_inode_to_block_cache = new blocknr_vector_type [inode_count_ + 1];
     std::memset(dir_inode_to_block_cache, 0, sizeof(blocknr_vector_type) * (inode_count_ + 1));
-    std::stringstream path;
+    std::stringstream buf;
+    int count = 0;
     while (cache >> inode)
     {
       cache.get(c);
       ASSERT(c == ' ');
       cache.get(c);
       ASSERT(c == '\'');
-      path.str("");
-      cache.get(*path.rdbuf(), '\'');
+      buf.clear();
+      buf.str("");
+      cache.get(*buf.rdbuf(), '\n');
       if (inode == EXT3_ROOT_INO)	// If the function extracts no elements, it calls setstate(failbit).
 	cache.clear();
       cache.get(c);	// Extraction stops on end-of-file or on an element that compares equal to delim (which is not extracted).
-      ASSERT(c == '\'');
-      std::pair<all_directories_type::iterator, bool> res = all_directories.insert(all_directories_type::value_type(path.str(), Directory(inode)));
+      ASSERT(c == '\n');
+      std::string::size_type pos = buf.str().find_last_of('\'');
+      ASSERT(pos != std::string::npos);
+      std::pair<all_directories_type::iterator, bool> res = all_directories.insert(all_directories_type::value_type(buf.str().substr(0, pos), Directory(inode)));
       ASSERT(res.second);
       std::pair<inode_to_directory_type::iterator, bool> res2 = inode_to_directory.insert(inode_to_directory_type::value_type(inode, res.first));
       ASSERT(res2.second);
+      buf.seekg(pos + 1);
       std::vector<uint32_t> block_numbers;
-      while(cache >> blocknr)
+      while(buf >> blocknr)
       {
         block_numbers.push_back(blocknr);
-	c = cache.get();
+	c = buf.get();
 	if (c != ' ')
 	{
-	  ASSERT(c == '\n');
+	  ASSERT(buf.eof());
 	  break;
 	}
       }
@@ -5510,6 +5515,8 @@ void init_directories(void)
       for (std::vector<uint32_t>::iterator block_number_iter = block_numbers.begin();
           block_number_iter != block_numbers.end(); ++block_number_iter, ++directory_block_iter)
 	directory_block_iter->read_block(*block_number_iter, directory_block_iter);
+      if (++count % 100 == 0)
+        std::cout << '.' << std::flush;
     }
     cache.close();
     std::cout << " done\n";

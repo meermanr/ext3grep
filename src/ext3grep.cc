@@ -6117,7 +6117,11 @@ void restore_file(std::string const& outfile)
   std::string outputdir_outfile = outputdir + outfile;
   if (is_directory(real_inode))
   {
-    if (mkdir(outputdir_outfile.c_str(), inode_mode_to_mkdir_mode(real_inode.mode())) == -1 && errno != EEXIST)
+    mode_t mode = inode_mode_to_mkdir_mode(real_inode.mode());
+    if (mode & (S_IWUSR|S_IXUSR) != (S_IWUSR|S_IXUSR))
+      std::cout << "Note: Restoring directory " << outputdir_outfile << " with mode " <<
+          FileMode(real_inode.mode() | 0500) << " although it's original mode is " << FileMode(real_inode.mode()) << ".\n";
+    if (mkdir(outputdir_outfile.c_str(), mode|S_IWUSR|S_IXUSR) == -1 && errno != EEXIST)
     {
       int error = errno;
       std::cout << std::flush;

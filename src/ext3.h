@@ -21,31 +21,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#define USE_KERNEL_HEADERS 0
-
 #ifndef EXT3_H
 #define EXT3_H
-
-#if USE_KERNEL_HEADERS
-
-// We're NOT supposed to use kernel headers at all,
-// so we have to do a few really dirty things to
-// make it work.
-#define cpu_to_le32 __cpu_to_le32
-#define cpu_to_le16 __cpu_to_le16
-#define le16_to_cpu __le16_to_cpu
-#define BUG() (void)0
-typedef unsigned int gfp_t;
-extern int get_order(unsigned long size);
-extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
-extern void free_pages(unsigned long addr, unsigned int order);
-
-#include <linux/byteorder/little_endian.h>
-#include <linux/ext3_fs.h>
-#include <linux/jbd.h>				// This includes "jfs_compat.h"
-#include <linux/limits.h>
-
-#else // !USE_KERNEL_HEADERS
 
 // Use the header files from e2progs (http://e2fsprogs.sourceforge.net)
 // We can use these headers and then everything named ext2 or ext3.
@@ -81,6 +58,7 @@ extern void free_pages(unsigned long addr, unsigned int order);
 #define EXT3_N_BLOCKS		EXT2_N_BLOCKS
 #define EXT3_DIR_PAD		EXT2_DIR_PAD
 #define EXT3_ROOT_INO		EXT2_ROOT_INO
+#define EXT3_I_SIZE		EXT2_I_SIZE
 #define EXT3_FEATURE_COMPAT_DIR_PREALLOC	EXT2_FEATURE_COMPAT_DIR_PREALLOC
 #define EXT3_FEATURE_COMPAT_IMAGIC_INODES	EXT2_FEATURE_COMPAT_IMAGIC_INODES
 #define EXT3_FEATURE_COMPAT_EXT_ATTR		EXT2_FEATURE_COMPAT_EXT_ATTR
@@ -103,8 +81,6 @@ typedef ext2_dir_entry_2 ext3_dir_entry_2;
 // of 'journal_revoke_header_t::r_count' was changed from int to __s32.
 #include "kernel-jbd.h"
 
-#endif // !USE_KERNEL_HEADERS
-
 #ifndef USE_PCH
 #include <stdint.h>
 #endif
@@ -118,7 +94,7 @@ struct Inode : protected ext3_inode {
   public:
     __u16 mode(void) const { return i_mode; }
     __u16 uid_low(void) const { return i_uid_low; }
-    __u32 size(void) const { return i_size; }
+    off_t size(void) const { return EXT3_I_SIZE(this); }
     __u32 atime(void) const { return i_atime; }
     __u32 ctime(void) const { return i_ctime; }
     __u32 mtime(void) const { return i_mtime; }

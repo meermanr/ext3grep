@@ -55,8 +55,7 @@
 #include "backtrace.h"
 #endif
 
-#if !USE_KERNEL_HEADERS
-// We keep using these types for clarity (to know when something is little endian and when big endian on DISK).
+// We keep using these types (actually defined in kernel headers) for clarity (to know when something is little endian and when big endian on DISK).
 // ext3grep assumes uint16_t and uint32_t to be little endian (intel cpu).
 typedef uint16_t __le16;
 typedef uint16_t __be16;
@@ -64,7 +63,6 @@ typedef uint32_t __le32;
 typedef uint32_t __be32;
 static inline uint32_t __be32_to_cpu(__be32 x) { return x << 24 | x >> 24 | (x & (uint32_t)0x0000ff00UL) << 8 | (x & (uint32_t)0x00ff0000UL) >> 8; }
 static inline uint16_t __be16_to_cpu(__be16 x) { return x << 8 | x >> 8; }
-#endif
 
 // Super block accessors.
 int inode_count(ext3_super_block const& super_block) { return super_block.s_inodes_count; }
@@ -2836,7 +2834,7 @@ static void print_inode_to(std::ostream& os, Inode& inode)
   // be used for indirect blocks.
   if ((inode.mode() & 0xf000) != 0xa000 || inode.blocks() != 0)		// Not an inline symlink?
   {
-    int number_of_indirect_blocks = (inode.blocks() * 512 - inode.size()) / block_size_;
+    unsigned int number_of_indirect_blocks = (inode.blocks() * 512 - inode.size()) / block_size_;
     os << " (--> " << number_of_indirect_blocks << " indirect " << ((number_of_indirect_blocks == 1) ? "block" : "blocks") << ").\n";
   }
   time_t atime = inode.atime();
@@ -5991,17 +5989,22 @@ void show_hardlinks(void)
 
 struct Data {
   std::ostream& out;
-  int remaining_size;
+  off_t remaining_size;
 
-  Data(std::ostream& out_, uint32_t remaining_size_) : out(out_), remaining_size(remaining_size_) { }
+  Data(std::ostream& out_, off_t remaining_size_) : out(out_), remaining_size(remaining_size_) { }
 };
 
 void restore_file_action(int blocknr, void* ptr)
 {
   Data& data(*reinterpret_cast<Data*>(ptr));
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
+  int len;
+
   get_block(blocknr, block_buf);
-  int len = std::min(data.remaining_size, block_size_);
+  if (data.remaining_size > block_size_)
+    len = block_size_;
+  else
+    len = data.remaining_size;
   data.out.write((char const*)block_buf, len);
   ASSERT(data.out.good());
   data.remaining_size -= len;

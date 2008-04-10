@@ -491,8 +491,10 @@ class InodePointer {
     // Copy constructor.
     InodePointer(InodePointer const& ref) : M_inode(ref.M_inode), M_group(ref.M_group)
     {
+#if USE_MMAP
       if (M_group != -1)
         refs_to_mmap[M_group]++;
+#endif
     }
 
     // Create an InodePointer to a fake inode.
@@ -501,18 +503,24 @@ class InodePointer {
     // Destructor.
     ~InodePointer()
     {
+#if USE_MMAP
       if (M_group != -1)
         refs_to_mmap[M_group]--;
+#endif
     }
 
     InodePointer& operator=(InodePointer const& inode_reference)
     {
       M_inode = inode_reference.M_inode;
+#if USE_MMAP
       if (M_group != -1)
 	refs_to_mmap[M_group]--;
+#endif
       M_group = inode_reference.M_group;
+#if USE_MMAP
       if (M_group != -1)
 	refs_to_mmap[M_group]++;
+#endif
       return *this;
     }
 
@@ -525,7 +533,9 @@ class InodePointer {
     InodePointer(Inode const& inode, int group) : M_inode(&inode), M_group(group)
     {
       ASSERT(M_group != -1);
+#if USE_MMAP
       refs_to_mmap[M_group]++;
+#endif
     }
 };
 
@@ -1277,13 +1287,13 @@ void load_inodes(int group)
   all_inodes[group] = new Inode[inodes_per_group_];	// sizeof(Inode) == inode_size_
   device.seekg(block_to_offset(block_number));
   ASSERT(device.good());
-  device.read(reinterpret_cast<char*>(all_inodes[group]), inodes_per_group_ * inode_size_);
+  device.read(reinterpret_cast<char*>(const_cast<Inode*>(all_inodes[group])), inodes_per_group_ * inode_size_);
   ASSERT(device.good());
 #ifdef DEBUG
   // We set this, so that we can find back where an inode struct came from
   // during debugging of this program in gdb. It is not used anywhere.
   for (int ino = 0; ino < inodes_per_group_; ++ino)
-    all_inodes[group][ino].set_reserved2(ino + 1 + group * inodes_per_group_);
+    const_cast<Inode*>(all_inodes[group])[ino].set_reserved2(ino + 1 + group * inodes_per_group_);
 #endif
 }
 #endif

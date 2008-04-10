@@ -443,6 +443,8 @@ void inode_unmap(int group)
 {
   if (all_inodes[group])
   {
+    DoutEntering(dc::notice, "inode_unmap(" << group << ")");
+
     ASSERT(refs_to_mmap[group] == 0 && nr_mmaps > 0);
     --nr_mmaps;
     munmap(all_mmaps[group], inodes_per_group_ * inode_size_ + ((char*)all_inodes[group] - (char*)all_mmaps[group]));
@@ -450,10 +452,31 @@ void inode_unmap(int group)
   }
 }
 
+// Maximum number of simultaneously mmapped inode tables.
+int const max_mmaps = (sizeof(void*) == 4) ? 16 : 1024;
+
 void inode_mmap(int group)
 {
   if (all_inodes[group])
     return;
+
+  DoutEntering(dc::notice, "inode_mmap(" << group << ")");
+
+  if (nr_mmaps >= max_mmaps)
+  {
+    // FIXME: This can be done more intelligent I guess.
+    // For now, just munmap all inode tables that are not in use.
+    for (int grp = 0; grp < groups_; ++grp)
+    {
+      if (!all_inodes[grp])		// Not mapped at all?
+        continue;
+      if (refs_to_mmap[grp] > 0)	// Referenced?
+        continue;
+      inode_unmap(grp);
+      if (nr_mmaps == 0)
+        break;
+    }
+  }
 
   int block_number = group_descriptor_table[group].bg_inode_table;
   int const blocks_per_page = page_size_ / block_size_;

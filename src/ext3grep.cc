@@ -228,7 +228,7 @@ class DirectoryBlockStats;
 static void decode_commandline_options(int& argc, char**& argv);
 static void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size);
 static void print_block_to(std::ostream& os, unsigned char* block);
-static void print_inode_to(std::ostream&, Inode const& inode);
+static void print_inode_to(std::ostream& os, Inode const& inode);
 static void iterate_over_directory(unsigned char* block, int blocknr,
     bool (*action)(ext3_dir_entry_2 const&, Inode const&, bool, bool, bool, bool, bool, bool, Parent*, void*), Parent* parent, void* data);
 static void iterate_over_directory_action(int blocknr, void* data);
@@ -465,7 +465,40 @@ void inode_mmap(int group)
 }
 #endif
 
-inline Inode const& get_inode(uint32_t inode)
+class InodePointer {
+  private:
+    Inode const* M_inode;
+    static Inode S_fake_inode;
+
+  public:
+    // Constructors.
+    InodePointer(void) : M_inode(NULL) { }
+    InodePointer(InodePointer const& ref) : M_inode(ref.M_inode) { }
+
+    // Create a reference to a fake inode.
+    InodePointer(int) : M_inode(&S_fake_inode) { }
+
+    // Destructor.
+    ~InodePointer() { }
+
+    InodePointer& operator=(InodePointer const& inode_reference)
+    {
+      M_inode = inode_reference.M_inode;
+      return *this;
+    }
+
+    // Accessors.
+    Inode const* operator->(void) const { return M_inode; }
+    Inode const& operator*(void) const { return *M_inode; }
+
+  private:
+    friend InodePointer get_inode(uint32_t inode);
+    InodePointer(Inode const& inode) : M_inode(&inode) { }
+};
+
+Inode InodePointer::S_fake_inode;	// This will be filled with zeroes.
+
+inline InodePointer get_inode(uint32_t inode)
 {
   int group = (inode - 1) / inodes_per_group_;
   unsigned int bit = inode - 1 - group * inodes_per_group_;
@@ -480,6 +513,12 @@ inline Inode const& get_inode(uint32_t inode)
   return all_inodes[group][bit];
 }
 
+static void print_inode_to(std::ostream& os, InodePointer inoderef)
+{
+  // We can dereference inoderef here because it is known that print_inode_to does not keep a pointer or reference to the inode.
+  print_inode_to(os, *inoderef);
+}
+
 void init_journal_consts(void)
 {
   // Initialize journal constants.
@@ -489,7 +528,7 @@ void init_journal_consts(void)
   journal_first_ = be2le(journal_super_block.s_first);
   journal_sequence_ = be2le(journal_super_block.s_sequence);
   journal_start_ = be2le(journal_super_block.s_start);
-  journal_inode = get_inode(super_block.s_journal_inum);
+  journal_inode = *get_inode(super_block.s_journal_inum);
 }
 
 unsigned char* get_block(int block, unsigned char* block_buf)
@@ -753,21 +792,42 @@ int inode_to_block(ext3_super_block const& super_block, int inode)
 }
 
 // Return true if this inode is a directory.
-static inline bool is_directory(Inode const& inode)
+inline bool is_directory(Inode const& inode)
 {
   return (inode.mode() & 0xf000) == 0x4000;
 }
 
+// Same for an InodePointer.
+inline bool is_directory(InodePointer const& inoderef)
+{
+  // We can dereference inoderef here because it is known that is_directory does not keep a pointer or reference to the inode.
+  return is_directory(*inoderef);
+}
+
 // Return true if this inode is a symlink.
-static inline bool is_symlink(Inode const& inode)
+inline bool is_symlink(Inode const& inode)
 {
   return (inode.mode() & 0xf000) == 0xa000;
 }
 
+// Same for an InodePointer.
+inline bool is_symlink(InodePointer const& inoderef)
+{
+  // We can dereference inoderef here because it is known that is_symlink does not keep a pointer or reference to the inode.
+  return is_symlink(*inoderef);
+}
+
 // Return true if this inode is a regular file.
-static inline bool is_regular_file(Inode const& inode)
+inline bool is_regular_file(Inode const& inode)
 {
   return (inode.mode() & 0xf000) == 0x8000;
+}
+
+// Same for an InodePointer.
+inline bool is_regular_file(InodePointer const& inoderef)
+{
+  // We can dereference inoderef here because it is known that is_regular_file does not keep a pointer or reference to the inode.
+  return is_regular_file(*inoderef);
 }
 
 struct DelayedWarning {
@@ -1160,6 +1220,13 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
   return false;
 }
 
+// Same for an InodePointer.
+bool iterate_over_all_blocks_of(InodePointer inode, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit)
+{
+  // inode is dereferenced here in good faith that no reference to it is kept (since there are no structs or classes that do so).
+  return iterate_over_all_blocks_of(*inode, action, data, indirect_mask);
+}
+
 //-----------------------------------------------------------------------------
 //
 // load_meta_data
@@ -1242,8 +1309,8 @@ void run_program(void)
   // Do we have a journal?
   if (super_block.s_journal_dev == 0)
   {
-    Inode const& journal_inode = get_inode(super_block.s_journal_inum);
-    int first_block = journal_inode.block()[0];
+    InodePointer journal_inode = get_inode(super_block.s_journal_inum);
+    int first_block = journal_inode->block()[0];
     ASSERT(first_block);
     // Read the first superblock.
     device.seekg(block_to_offset(first_block));
@@ -1364,7 +1431,7 @@ void run_program(void)
   // Handle --inode
   if (commandline_inode != -1)
   {
-    Inode const& inode(get_inode(commandline_inode));
+    InodePointer inode(get_inode(commandline_inode));
     if (commandline_print)
     {
       std::cout << "\nHex dump of inode " << commandline_inode << ":\n";
@@ -1538,13 +1605,13 @@ void run_program(void)
 	if (isdir == isdir_start)
 	{
 	  ext3_dir_entry_2* dir_entry = reinterpret_cast<ext3_dir_entry_2*>(block);
-	  Inode const& inode = get_inode(dir_entry->inode);
-	  if (!is_directory(inode) || (inode.block()[0] && inode.block()[0] != (__le32)commandline_block))
+	  InodePointer inode = get_inode(dir_entry->inode);
+	  if (!is_directory(inode) || (inode->block()[0] && inode->block()[0] != (__le32)commandline_block))
 	  {
 	    print_directory(block, commandline_block);
 	    std::cout << "WARNING: inode " << dir_entry->inode << " was reallocated!\n";
 	  }
-	  else if (!inode.block()[0])
+	  else if (!inode->block()[0])
 	  {
 	    print_directory(block, commandline_block);
 	    if (allocated)	// Is this at all possible?
@@ -1637,10 +1704,10 @@ void run_program(void)
       // Run over all inodes.
       for (int bit = 0, inode_number = ibase + 1; bit < inodes_per_group_; ++bit, ++inode_number)
       {
-	Inode const& inode(get_inode(inode_number));
-	if (commandline_deleted && !inode.is_deleted())
+	InodePointer inode(get_inode(inode_number));
+	if (commandline_deleted && !inode->is_deleted())
 	  continue;
-	if ((commandline_histogram == hist_dtime || commandline_histogram == hist_group) && !inode.has_valid_dtime())
+	if ((commandline_histogram == hist_dtime || commandline_histogram == hist_group) && !inode->has_valid_dtime())
           continue;
 	if (commandline_directory && !is_directory(inode))
 	  continue;
@@ -1655,22 +1722,22 @@ void run_program(void)
 	}
 	time_t xtime = 0;
 	if (commandline_histogram == hist_dtime)
-	  xtime = inode.dtime();
+	  xtime = inode->dtime();
 	else if (commandline_histogram == hist_atime)
 	{
-	  xtime = inode.atime();
+	  xtime = inode->atime();
 	  if (xtime == 0)
 	    continue;
         }
 	else if (commandline_histogram == hist_ctime)
 	{
-	  xtime = inode.ctime();
+	  xtime = inode->ctime();
 	  if (xtime == 0)
 	    continue;
 	}
 	else if (commandline_histogram == hist_mtime)
 	{
-	  xtime = inode.mtime();
+	  xtime = inode->mtime();
 	  if (xtime == 0)
 	    continue;
         }
@@ -1678,9 +1745,9 @@ void run_program(void)
 	  hist_add(xtime);
 	if (commandline_histogram == hist_group)
 	{
-	  if (commandline_after && commandline_after > (time_t)inode.dtime())
+	  if (commandline_after && commandline_after > (time_t)inode->dtime())
 	    continue;
-	  if (commandline_before && (time_t)inode.dtime() >= commandline_before)
+	  if (commandline_before && (time_t)inode->dtime() >= commandline_before)
 	    continue;
 	  hist_add(group);
         }
@@ -1768,7 +1835,7 @@ void run_program(void)
     std::cout << "Inodes refering to block " << commandline_search_inode << ':' << std::flush;
     for (uint32_t inode = 1; inode <= inode_count_; ++inode)
     {
-      Inode const& ino = get_inode(inode);
+      InodePointer ino = get_inode(inode);
       find_block_data_st data;
       data.block_looking_for = commandline_search_inode;
       data.found_block = false;
@@ -1795,7 +1862,7 @@ void run_program(void)
 	if (group != commandline_group)
 	  continue;
       }
-      Inode const& ino = get_inode(inode);
+      InodePointer ino = get_inode(inode);
       static char zeroes[128] = {0, };
       if (is_allocated(inode) && std::memcmp(&ino, zeroes, sizeof(zeroes)) == 0)
         std::cout << ' ' << inode << std::flush;
@@ -2922,11 +2989,11 @@ char const* dir_entry_file_type(int file_type, bool ls)
 struct Parent {
   Parent* M_parent;
   ext3_dir_entry_2 const* M_dir_entry;
-  Inode const* M_inode;
+  InodePointer M_inode;
   uint32_t M_inodenr;
 
-  Parent(Inode const* inode, uint32_t inodenr) : M_parent(NULL), M_dir_entry(NULL), M_inode(inode), M_inodenr(inodenr) { }
-  Parent(Parent* parent, ext3_dir_entry_2 const* dir_entry, Inode const* inode, uint32_t inodenr) :
+  Parent(InodePointer const& inode, uint32_t inodenr) : M_parent(NULL), M_dir_entry(NULL), M_inode(inode), M_inodenr(inodenr) { }
+  Parent(Parent* parent, ext3_dir_entry_2 const* dir_entry, InodePointer const& inode, uint32_t inodenr) :
       M_parent(parent), M_dir_entry(dir_entry), M_inode(inode), M_inodenr(inodenr) { }
   std::string dirname(bool show_inodes) const;
 };
@@ -2995,6 +3062,13 @@ int print_symlink(std::ostream& os, Inode const& inode)
     os << block;
   }
   return len;
+}
+
+// Same for an InodePointer.
+inline int print_symlink(std::ostream& os, InodePointer const& inoderef)
+{
+  // We can dereference inoderef here because it is known that print_symlink does not keep a pointer or reference to the inode.
+  return print_symlink(os, *inoderef);
 }
 
 bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode const& inode,
@@ -3078,7 +3152,7 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
 			     bool (*action)(ext3_dir_entry_2 const&, Inode const&, bool, bool, bool, bool, bool, bool, Parent*, void*),
 			     Parent* parent, void* data)
 {
-  Inode const* inode = NULL;
+  InodePointer inode;
   int file_type = (dir_entry.file_type & 7);
   bool zero_inode = (dir_entry.inode == 0);
   bool filtered = (zero_inode && !commandline_zeroed_inodes);
@@ -3086,7 +3160,7 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
   bool reallocated = false;
   if (!zero_inode)
   {
-    inode = &get_inode(dir_entry.inode);
+    inode = get_inode(dir_entry.inode);
     allocated = is_allocated(dir_entry.inode);
     reallocated = (deleted && allocated) || (deleted && !inode->is_deleted()) || (feature_incompat_filetype && mode_map[file_type] != (inode->mode() & 0xf000));
     deleted = deleted || inode->is_deleted();
@@ -3094,7 +3168,7 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
     // however - in the case of symlinks, the name of the symlink is (still) in this place.
     // Only printing this for regular files and directories, as also char/block devices seem to
     // sometimes have a non-zero block list, and we don't "recover" those anyway.
-    if (inode->has_valid_dtime() && inode->block()[0] != 0 && (is_regular_file(*inode) || is_directory(*inode)))
+    if (inode->has_valid_dtime() && inode->block()[0] != 0 && (is_regular_file(inode) || is_directory(inode)))
     {
       time_t dtime = inode->dtime();
       std::string dtime_str(std::ctime(&dtime));
@@ -3106,20 +3180,22 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
 	(!commandline_allocated || allocated) &&
 	(!commandline_unallocated || !allocated) &&
 	(!commandline_deleted || deleted) &&
-	(!commandline_directory || is_directory(*inode)) &&
+	(!commandline_directory || is_directory(inode)) &&
 	(!reallocated || commandline_reallocated) &&
 	(reallocated ||
 	    (!inode->is_deleted() && !commandline_deleted) ||
 	    (inode->has_valid_dtime() && commandline_after <= (time_t)inode->dtime() && (!commandline_before || (time_t)inode->dtime() < commandline_before))));
   }
   if (no_filtering)	// Also no recursion.
+    // inode is dereferenced here in good faith that no reference to it is kept (since there are no structs or classes that do so).
     action(dir_entry, *inode, deleted, allocated, reallocated, zero_inode, linked, filtered, parent, data);
   else if (!filtered)
   {
+    // inode is dereferenced here in good faith that no reference to it is kept (since there are no structs or classes that do so).
     if (action(dir_entry, *inode, deleted, allocated, reallocated, zero_inode, linked, filtered, parent, data))
       return;	// Recursion aborted.
     // Handle recursion.
-    if (parent && is_directory(*inode) && depth < commandline_depth)
+    if (parent && is_directory(inode) && depth < commandline_depth)
     {
       // Skip "." and ".." when iterating recursively.
       if ((dir_entry.name_len == 1 && dir_entry.name[0] == '.') ||
@@ -3146,7 +3222,8 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
       ++depth;
       if (!deleted && allocated && !reallocated)	// Existing directory?
       {
-	bool reused_or_corrupted_indirect_block3 = iterate_over_all_blocks_of(get_inode(dir_entry.inode), iterate_over_existing_directory_action, &idata);
+        InodePointer inoderef(get_inode(dir_entry.inode));
+	bool reused_or_corrupted_indirect_block3 = iterate_over_all_blocks_of(inoderef, iterate_over_existing_directory_action, &idata);
 	ASSERT(!reused_or_corrupted_indirect_block3);
       }
       else
@@ -3443,10 +3520,10 @@ void DirEntry::print(void) const
     std::cout << '-';
   std::cout << std::setfill(' ') << std::setw(8) << M_inode << "  ";
   std::cout << (zero_inode ? 'Z' : deleted ? reallocated ? 'R' : 'D' : ' ');
-  Inode const* inode = NULL;
+  InodePointer inode;
   if (!zero_inode)
   {
-    inode = &get_inode(M_inode);
+    inode = get_inode(M_inode);
     if (deleted && !reallocated)
     {
       time_t dtime = inode->dtime();
@@ -3463,10 +3540,10 @@ void DirEntry::print(void) const
   else
     std::cout << "  " << FileMode(inode->mode());
   std::cout << "  " << M_name;
-  if (!(reallocated || zero_inode) && is_symlink(*inode))
+  if (!(reallocated || zero_inode) && is_symlink(inode))
   {
     std::cout << " -> ";
-    print_symlink(std::cout, *inode);
+    print_symlink(std::cout, inode);
   }
   std::cout << '\n';
 }
@@ -3925,7 +4002,7 @@ static void init_journal(void)
 
   // Determine which blocks belong to the journal.
   ASSERT(is_allocated(super_block.s_journal_inum));	// Maybe this is the way to detect external journals?
-  Inode const& journal_inode = get_inode(super_block.s_journal_inum);
+  InodePointer journal_inode = get_inode(super_block.s_journal_inum);
   // Find the block range used by the journal.
   smallest_block_nr = block_count(super_block);
   largest_block_nr = 0;
@@ -4341,8 +4418,8 @@ int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int 
 {
   if (is_allocated(inode_number))
   {
-    Inode const& real_inode = get_inode(inode_number);
-    if (is_directory(real_inode) && inode_refers_to(real_inode, directory_block_number))
+    InodePointer real_inode = get_inode(inode_number);
+    if (is_directory(*real_inode) && inode_refers_to(*real_inode, directory_block_number))
       return std::numeric_limits<int>::max();
   }
   // Get sequence/Inode pairs from the Journal.
@@ -4637,11 +4714,11 @@ void init_dir_inode_to_block_cache(void)
     blocknr_vector_type const bv = dir_inode_to_block_cache[i];
     if (allocated)
     {
-      Inode const& inode = get_inode(i);
+      InodePointer inode = get_inode(i);
       if (is_directory(inode))
       {
 	++ainc;
-	uint32_t first_block = inode.block()[0];
+	uint32_t first_block = inode->block()[0];
 	// If the inode is an allocated directory, it must reference at least one block.
 	if (!first_block)
 	{
@@ -5279,8 +5356,8 @@ void init_directories(void)
     }
 
     // Get root inode.
-    Inode const& root_inode(get_inode(EXT3_ROOT_INO));
-    Parent parent(&root_inode, EXT3_ROOT_INO);
+    InodePointer root_inode(get_inode(EXT3_ROOT_INO));
+    Parent parent(root_inode, EXT3_ROOT_INO);
     // Get the block that refers to inode EXT3_ROOT_INO.
     int root_blocknr = dir_inode_to_block(EXT3_ROOT_INO);
     ASSERT(root_blocknr != -1);	// This should be impossible; inode EXT3_ROOT_INO is never wiped(?).
@@ -5351,9 +5428,10 @@ void init_directories(void)
 	    fake_dir_entry.file_type = 0; // Not used
 	    fake_dir_entry.name_len = dir_iter->first.size();
 	    strncpy(fake_dir_entry.name, dir_iter->first.c_str(), fake_dir_entry.name_len);
-	    static Inode fake_inode;	// Will be filled with zeroes so that has_valid_dtime() returns false.
-	    Parent dummy_parent(&fake_inode, 0);
-	    Parent parent(&dummy_parent, &fake_dir_entry, &get_inode(inode_number), inode_number);
+	    InodePointer fake_reference(0);
+	    Parent dummy_parent(fake_reference, 0);
+	    InodePointer inoderef(get_inode(inode_number));
+	    Parent parent(&dummy_parent, &fake_dir_entry, inoderef, inode_number);
 	    ASSERT(parent.dirname(false) == dir_iter->first);
 	    // Iterate over all directory blocks that we can reach.
 	    int depth_store = commandline_depth;
@@ -5867,10 +5945,10 @@ enum get_undeleted_inode_type {
 
 get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence = NULL)
 {
-  Inode const& real_inode(get_inode(inodenr));
-  if (!real_inode.is_deleted())
+  InodePointer real_inode(get_inode(inodenr));
+  if (!real_inode->is_deleted())
   {
-    inode = real_inode;
+    inode = *real_inode;
     return ui_real_inode;
   }
   std::vector<std::pair<int, Inode> > inodes;
@@ -6088,7 +6166,7 @@ void restore_file(std::string const& outfile)
     }
     inodenr = directory_iter->second.inode_number();
   }
-  Inode const real_inode = get_inode(inodenr);
+  InodePointer real_inode = get_inode(inodenr);
   std::string::size_type slash = outfile.find_last_of('/');
   if (slash != std::string::npos)
   {
@@ -6115,12 +6193,12 @@ void restore_file(std::string const& outfile)
     }
   }
   std::string outputdir_outfile = outputdir + outfile;
-  if (is_directory(real_inode))
+  if (is_directory(*real_inode))
   {
-    mode_t mode = inode_mode_to_mkdir_mode(real_inode.mode());
+    mode_t mode = inode_mode_to_mkdir_mode(real_inode->mode());
     if (mode & (S_IWUSR|S_IXUSR) != (S_IWUSR|S_IXUSR))
       std::cout << "Note: Restoring directory " << outputdir_outfile << " with mode " <<
-          FileMode(real_inode.mode() | 0500) << " although it's original mode is " << FileMode(real_inode.mode()) << ".\n";
+          FileMode(real_inode->mode() | 0500) << " although it's original mode is " << FileMode(real_inode->mode()) << ".\n";
     if (mkdir(outputdir_outfile.c_str(), mode|S_IWUSR|S_IXUSR) == -1 && errno != EEXIST)
     {
       int error = errno;
@@ -6129,8 +6207,8 @@ void restore_file(std::string const& outfile)
       exit(EXIT_FAILURE);
     }
     struct utimbuf ub;
-    ub.actime = real_inode.atime();
-    ub.modtime = real_inode.mtime();
+    ub.actime = real_inode->atime();
+    ub.modtime = real_inode->mtime();
     if (utime(outputdir_outfile.c_str(), &ub) == -1)
     {
       int error = errno;

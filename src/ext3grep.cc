@@ -303,6 +303,8 @@ std::ifstream device;
 int device_fd;
 long page_size_;
 void** all_mmaps;
+int* refs_to_mmap;
+int nr_mmaps;
 #endif
 char* reserved_memory;
 Inode const** all_inodes;
@@ -403,9 +405,13 @@ void init_consts()
   // Global arrays of pointers.
   all_inodes = new Inode const* [groups_];
 #if USE_MMAP
-  // We use this array to know of which groups we mmapped. Therefore zero it out.
+  // We use this array to know of which groups we mmapped, therefore zero it out.
   std::memset(all_inodes, 0, sizeof(Inode*) * groups_);
   all_mmaps = new void* [groups_];
+  nr_mmaps = 0;
+  refs_to_mmap = new int [groups_];
+  // We use this array to know of which mmap inodes are being used, therefore zero it out.
+  std::memset(refs_to_mmap, 0, sizeof(int) * groups_);
 #endif
   block_bitmap = new bitmap_t* [groups_];
   // We use this array to know of which groups we loaded the metadata. Therefore zero it out.
@@ -437,6 +443,8 @@ void inode_unmap(int group)
 {
   if (all_inodes[group])
   {
+    ASSERT(refs_to_mmap[group] == 0 && nr_mmaps > 0);
+    --nr_mmaps;
     munmap(all_mmaps[group], inodes_per_group_ * inode_size_ + ((char*)all_inodes[group] - (char*)all_mmaps[group]));
     all_inodes[group] = NULL;
   }
@@ -457,33 +465,54 @@ void inode_mmap(int group)
       PROT_READ, MAP_PRIVATE | MAP_NORESERVE, device_fd, page_aligned_offset);
   if (all_mmaps[group] == MAP_FAILED)
   {
-    std::cerr << progname << ": mmap: " << strerror(errno) << std::endl;
+    int error = errno;
+    all_mmaps[group] = NULL;
+    std::cerr << progname << ": mmap: " << strerror(error) << std::endl;
+    // Fail.
     ASSERT(all_mmaps[group] != MAP_FAILED);
   }
 
   all_inodes[group] = reinterpret_cast<Inode const*>((char*)all_mmaps[group] + (offset - page_aligned_offset));
+  ASSERT(refs_to_mmap[group] == 0);
+  ++nr_mmaps;
 }
 #endif
 
 class InodePointer {
   private:
     Inode const* M_inode;
+    int M_group;
     static Inode S_fake_inode;
 
   public:
-    // Constructors.
-    InodePointer(void) : M_inode(NULL) { }
-    InodePointer(InodePointer const& ref) : M_inode(ref.M_inode) { }
+    // Default constructor.
+    InodePointer(void) : M_inode(NULL), M_group(-1) { }
 
-    // Create a reference to a fake inode.
-    InodePointer(int) : M_inode(&S_fake_inode) { }
+    // Copy constructor.
+    InodePointer(InodePointer const& ref) : M_inode(ref.M_inode), M_group(ref.M_group)
+    {
+      if (M_group != -1)
+        refs_to_mmap[M_group]++;
+    }
+
+    // Create an InodePointer to a fake inode.
+    InodePointer(int) : M_inode(&S_fake_inode), M_group(-1) { }
 
     // Destructor.
-    ~InodePointer() { }
+    ~InodePointer()
+    {
+      if (M_group != -1)
+        refs_to_mmap[M_group]--;
+    }
 
     InodePointer& operator=(InodePointer const& inode_reference)
     {
       M_inode = inode_reference.M_inode;
+      if (M_group != -1)
+	refs_to_mmap[M_group]--;
+      M_group = inode_reference.M_group;
+      if (M_group != -1)
+	refs_to_mmap[M_group]++;
       return *this;
     }
 
@@ -493,7 +522,11 @@ class InodePointer {
 
   private:
     friend InodePointer get_inode(uint32_t inode);
-    InodePointer(Inode const& inode) : M_inode(&inode) { }
+    InodePointer(Inode const& inode, int group) : M_inode(&inode), M_group(group)
+    {
+      ASSERT(M_group != -1);
+      refs_to_mmap[M_group]++;
+    }
 };
 
 Inode InodePointer::S_fake_inode;	// This will be filled with zeroes.
@@ -510,7 +543,7 @@ inline InodePointer get_inode(uint32_t inode)
   if (block_bitmap[group] == NULL)
     load_meta_data(group);
 #endif
-  return all_inodes[group][bit];
+  return InodePointer(all_inodes[group][bit], group);
 }
 
 static void print_inode_to(std::ostream& os, InodePointer inoderef)
@@ -1914,7 +1947,9 @@ void run_program(void)
     delete [] block_bitmap;
     delete [] all_inodes;
 #if USE_MMAP
+    ASSERT(nr_mmaps == 0);
     delete [] all_mmaps;
+    delete [] refs_to_mmap;
 #endif
     delete [] group_descriptor_table;
   }

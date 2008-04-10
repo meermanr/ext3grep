@@ -228,9 +228,9 @@ class DirectoryBlockStats;
 static void decode_commandline_options(int& argc, char**& argv);
 static void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size);
 static void print_block_to(std::ostream& os, unsigned char* block);
-static void print_inode_to(std::ostream&, Inode& inode);
+static void print_inode_to(std::ostream&, Inode const& inode);
 static void iterate_over_directory(unsigned char* block, int blocknr,
-    bool (*action)(ext3_dir_entry_2 const&, Inode&, bool, bool, bool, bool, bool, bool, Parent*, void*), Parent* parent, void* data);
+    bool (*action)(ext3_dir_entry_2 const&, Inode const&, bool, bool, bool, bool, bool, bool, Parent*, void*), Parent* parent, void* data);
 static void iterate_over_directory_action(int blocknr, void* data);
 static void iterate_over_existing_directory_action(int blocknr, void* data);
 static void iterate_over_journal(
@@ -239,14 +239,14 @@ static void iterate_over_journal(
     bool (*action_commit)(uint32_t block, uint32_t sequence, void* data), void* data);
 static void print_directory(unsigned char* block, int blocknr);
 static void print_restrictions(void);
-static bool is_directory(Inode& inode);
+static bool is_directory(Inode const& inode);
 static is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlockStats& stats,
     bool start_block = true, bool certainly_linked = true, int offset = 0);
 static bool is_journal(int blocknr);
 static bool is_in_journal(int blocknr);
 static int is_inode_block(int blocknr);
 static bool is_indirect_block_in_journal(int blocknr);
-static bool is_symlink(Inode& inode);
+static bool is_symlink(Inode const& inode);
 static void hist_init(size_t min, size_t max);
 static void hist_add(size_t val);
 static void hist_print(void);
@@ -255,7 +255,7 @@ static int journal_block_to_real_block(int blocknr);
 static void init_journal(void);
 static int journal_block_contains_inodes(int blocknr);
 static void handle_commandline_journal_transaction(void);
-static int print_symlink(std::ostream& os, Inode& inode);
+static int print_symlink(std::ostream& os, Inode const& inode);
 static void print_block_descriptors(uint32_t block);
 static void print_directory_inode(int inode);
 static void dump_names(void);
@@ -305,7 +305,7 @@ long page_size_;
 void** all_mmaps;
 #endif
 char* reserved_memory;
-Inode** all_inodes;
+Inode const** all_inodes;
 bitmap_t** block_bitmap;
 bitmap_t** inode_bitmap;
 char* inodes_buf;
@@ -401,7 +401,7 @@ void init_consts()
   inodes_buf = new char[inodes_per_group_ * inode_size_];
 
   // Global arrays of pointers.
-  all_inodes = new Inode* [groups_];
+  all_inodes = new Inode const* [groups_];
 #if USE_MMAP
   // We use this array to know of which groups we mmapped. Therefore zero it out.
   std::memset(all_inodes, 0, sizeof(Inode*) * groups_);
@@ -461,11 +461,11 @@ void inode_mmap(int group)
     ASSERT(all_mmaps[group] != MAP_FAILED);
   }
 
-  all_inodes[group] = reinterpret_cast<Inode*>((char*)all_mmaps[group] + (offset - page_aligned_offset));
+  all_inodes[group] = reinterpret_cast<Inode const*>((char*)all_mmaps[group] + (offset - page_aligned_offset));
 }
 #endif
 
-inline Inode& get_inode(uint32_t inode)
+inline Inode const& get_inode(uint32_t inode)
 {
   int group = (inode - 1) / inodes_per_group_;
   unsigned int bit = inode - 1 - group * inodes_per_group_;
@@ -753,19 +753,19 @@ int inode_to_block(ext3_super_block const& super_block, int inode)
 }
 
 // Return true if this inode is a directory.
-static inline bool is_directory(Inode& inode)
+static inline bool is_directory(Inode const& inode)
 {
   return (inode.mode() & 0xf000) == 0x4000;
 }
 
 // Return true if this inode is a symlink.
-static inline bool is_symlink(Inode& inode)
+static inline bool is_symlink(Inode const& inode)
 {
   return (inode.mode() & 0xf000) == 0xa000;
 }
 
 // Return true if this inode is a regular file.
-static inline bool is_regular_file(Inode& inode)
+static inline bool is_regular_file(Inode const& inode)
 {
   return (inode.mode() & 0xf000) == 0x8000;
 }
@@ -1126,7 +1126,7 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)
 }
 
 // Returns true if an indirect block was encountered that doesn't look like an indirect block anymore.
-bool iterate_over_all_blocks_of(Inode& inode, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit)
+bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit)
 {
   if (is_symlink(inode) && inode.blocks() == 0)
     return false;		// Block pointers contain text.
@@ -1242,7 +1242,7 @@ void run_program(void)
   // Do we have a journal?
   if (super_block.s_journal_dev == 0)
   {
-    Inode& journal_inode = get_inode(super_block.s_journal_inum);
+    Inode const& journal_inode = get_inode(super_block.s_journal_inum);
     int first_block = journal_inode.block()[0];
     ASSERT(first_block);
     // Read the first superblock.
@@ -1364,7 +1364,7 @@ void run_program(void)
   // Handle --inode
   if (commandline_inode != -1)
   {
-    Inode& inode(get_inode(commandline_inode));
+    Inode const& inode(get_inode(commandline_inode));
     if (commandline_print)
     {
       std::cout << "\nHex dump of inode " << commandline_inode << ":\n";
@@ -1499,8 +1499,8 @@ void run_program(void)
 	      if (commandline_print)
 	      {
 		int inodenr = block_to_inode(real_block);
-	        for (Inode* inode = reinterpret_cast<Inode*>(block); reinterpret_cast<unsigned char*>(inode) < block + block_size_;
-		    inode = reinterpret_cast<Inode*>(reinterpret_cast<unsigned char*>(inode) + inode_size_), ++inodenr)
+	        for (Inode const* inode = reinterpret_cast<Inode const*>(block); reinterpret_cast<unsigned char const*>(inode) < block + block_size_;
+		    inode = reinterpret_cast<Inode const*>(reinterpret_cast<unsigned char const*>(inode) + inode_size_), ++inodenr)
 		{
 		  std::cout << "\n--------------Inode " << inodenr << "-----------------------\n";
 		  print_inode_to(std::cout, *inode);
@@ -1538,7 +1538,7 @@ void run_program(void)
 	if (isdir == isdir_start)
 	{
 	  ext3_dir_entry_2* dir_entry = reinterpret_cast<ext3_dir_entry_2*>(block);
-	  Inode& inode = get_inode(dir_entry->inode);
+	  Inode const& inode = get_inode(dir_entry->inode);
 	  if (!is_directory(inode) || (inode.block()[0] && inode.block()[0] != (__le32)commandline_block))
 	  {
 	    print_directory(block, commandline_block);
@@ -1637,7 +1637,7 @@ void run_program(void)
       // Run over all inodes.
       for (int bit = 0, inode_number = ibase + 1; bit < inodes_per_group_; ++bit, ++inode_number)
       {
-	Inode& inode(get_inode(inode_number));
+	Inode const& inode(get_inode(inode_number));
 	if (commandline_deleted && !inode.is_deleted())
 	  continue;
 	if ((commandline_histogram == hist_dtime || commandline_histogram == hist_group) && !inode.has_valid_dtime())
@@ -1768,7 +1768,7 @@ void run_program(void)
     std::cout << "Inodes refering to block " << commandline_search_inode << ':' << std::flush;
     for (uint32_t inode = 1; inode <= inode_count_; ++inode)
     {
-      Inode& ino = get_inode(inode);
+      Inode const& ino = get_inode(inode);
       find_block_data_st data;
       data.block_looking_for = commandline_search_inode;
       data.found_block = false;
@@ -1795,7 +1795,7 @@ void run_program(void)
 	if (group != commandline_group)
 	  continue;
       }
-      Inode& ino = get_inode(inode);
+      Inode const& ino = get_inode(inode);
       static char zeroes[128] = {0, };
       if (is_allocated(inode) && std::memcmp(&ino, zeroes, sizeof(zeroes)) == 0)
         std::cout << ' ' << inode << std::flush;
@@ -2808,7 +2808,7 @@ static int const mode_map[8] = {
    0xA000  // EXT3_FT_SYMLINK
 };
 
-static void print_inode_to(std::ostream& os, Inode& inode)
+static void print_inode_to(std::ostream& os, Inode const& inode)
 {
   os << "Generation Id: " << inode.generation() << '\n';
   union {
@@ -2957,7 +2957,7 @@ std::string Parent::dirname(bool show_inodes) const
   return path;
 }
 
-int print_symlink(std::ostream& os, Inode& inode)
+int print_symlink(std::ostream& os, Inode const& inode)
 {
   uint32_t len = 0;
   if (inode.blocks() == 0)
@@ -2997,7 +2997,7 @@ int print_symlink(std::ostream& os, Inode& inode)
   return len;
 }
 
-bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
+bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode const& inode,
     bool UNUSED(deleted), bool UNUSED(allocated), bool reallocated, bool zero_inode, bool linked, bool filtered, Parent*, void*)
 {
   std::cout << "\ninode: " << dir_entry.inode << '\n';
@@ -3046,7 +3046,7 @@ bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode& inode
 }
 
 #ifdef CPPGRAPH
-void iterate_over_directory__with__print_dir_entry_long_action(void) { (void)print_dir_entry_long_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+void iterate_over_directory__with__print_dir_entry_long_action(void) { (void)print_dir_entry_long_action(*(ext3_dir_entry_2 const*)NULL, *(Inode const*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
 #endif
 
 //-----------------------------------------------------------------------------
@@ -3056,7 +3056,7 @@ void iterate_over_directory__with__print_dir_entry_long_action(void) { (void)pri
 //
 
 struct iterate_data_st {
-  bool (*action)(ext3_dir_entry_2 const&, Inode&, bool, bool, bool, bool, bool, bool, Parent*, void*);
+  bool (*action)(ext3_dir_entry_2 const&, Inode const&, bool, bool, bool, bool, bool, bool, Parent*, void*);
   Parent* parent;
   void* data;
   unsigned char* block_buf;
@@ -3066,19 +3066,19 @@ struct iterate_data_st {
 };
 
 static int depth;
-bool read_block_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
+bool read_block_action(ext3_dir_entry_2 const& dir_entry, Inode const& inode,
     bool deleted, bool allocated, bool reallocated, bool zero_inode, bool linked, bool filtered, Parent* parent, void* data);
 #ifdef CPPGRAPH
-void iterate_over_directory__with__read_block_action(void) { (void)read_block_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+void iterate_over_directory__with__read_block_action(void) { (void)read_block_action(*(ext3_dir_entry_2 const*)NULL, *(Inode const*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
 #endif
-bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bool, bool, bool, bool, bool, Parent* parent, void*);
+bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode const&, bool, bool, bool, bool, bool, bool, Parent* parent, void*);
 
 static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
                              bool deleted, bool linked,
-			     bool (*action)(ext3_dir_entry_2 const&, Inode&, bool, bool, bool, bool, bool, bool, Parent*, void*),
+			     bool (*action)(ext3_dir_entry_2 const&, Inode const&, bool, bool, bool, bool, bool, bool, Parent*, void*),
 			     Parent* parent, void* data)
 {
-  Inode* inode = NULL;
+  Inode const* inode = NULL;
   int file_type = (dir_entry.file_type & 7);
   bool zero_inode = (dir_entry.inode == 0);
   bool filtered = (zero_inode && !commandline_zeroed_inodes);
@@ -3197,7 +3197,7 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
 }
 
 #ifdef CPPGRAPH
-void iterate_over_directory__with__init_directories_action(void) { (void)init_directories_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+void iterate_over_directory__with__init_directories_action(void) { (void)init_directories_action(*(ext3_dir_entry_2 const*)NULL, *(Inode const*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
 #endif
 
 static void iterate_over_directory_action(int blocknr, void* data)
@@ -3215,7 +3215,7 @@ static void iterate_over_existing_directory_action(int blocknr, void* data)
 }
 
 static void iterate_over_directory(unsigned char* block, int blocknr,
-    bool (*action)(ext3_dir_entry_2 const&, Inode&, bool, bool, bool, bool, bool, bool, Parent*, void*), Parent* parent, void* data)
+    bool (*action)(ext3_dir_entry_2 const&, Inode const&, bool, bool, bool, bool, bool, bool, Parent*, void*), Parent* parent, void* data)
 {
   ext3_dir_entry_2 const* dir_entry;
   ext3_dir_entry_2 const* map[EXT3_MAX_BLOCK_SIZE / EXT3_DIR_PAD];
@@ -3292,7 +3292,7 @@ class DirectoryBlock {
     std::vector<DirEntry> M_dir_entry;
   public:
     void read_block(int block, std::list<DirectoryBlock>::iterator iter);
-    void read_dir_entry(ext3_dir_entry_2 const& dir_entry, Inode& inode,
+    void read_dir_entry(ext3_dir_entry_2 const& dir_entry, Inode const& inode,
         bool deleted, bool allocated, bool reallocated, bool zero_inode, bool linked, bool filtered, std::list<DirectoryBlock>::iterator iter);
 
     bool exactly_equal(DirectoryBlock const& dir) const;
@@ -3315,7 +3315,7 @@ bool DirectoryBlock::exactly_equal(DirectoryBlock const& dir) const
   return true;
 }
 
-bool read_block_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
+bool read_block_action(ext3_dir_entry_2 const& dir_entry, Inode const& inode,
     bool deleted, bool allocated, bool reallocated, bool zero_inode, bool linked, bool filtered, Parent*, void* data)
 {
   std::list<DirectoryBlock>::iterator* iter_ptr = reinterpret_cast<std::list<DirectoryBlock>::iterator*>(data);
@@ -3324,7 +3324,7 @@ bool read_block_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
   return false;
 }
 
-void DirectoryBlock::read_dir_entry(ext3_dir_entry_2 const& dir_entry, Inode& UNUSED(inode),
+void DirectoryBlock::read_dir_entry(ext3_dir_entry_2 const& dir_entry, Inode const& UNUSED(inode),
     bool deleted, bool allocated, bool reallocated, bool zero_inode, bool linked, bool filtered, std::list<DirectoryBlock>::iterator iter)
 {
   DirEntry new_dir_entry;
@@ -3443,7 +3443,7 @@ void DirEntry::print(void) const
     std::cout << '-';
   std::cout << std::setfill(' ') << std::setw(8) << M_inode << "  ";
   std::cout << (zero_inode ? 'Z' : deleted ? reallocated ? 'R' : 'D' : ' ');
-  Inode* inode = NULL;
+  Inode const* inode = NULL;
   if (!zero_inode)
   {
     inode = &get_inode(M_inode);
@@ -3925,7 +3925,7 @@ static void init_journal(void)
 
   // Determine which blocks belong to the journal.
   ASSERT(is_allocated(super_block.s_journal_inum));	// Maybe this is the way to detect external journals?
-  Inode& journal_inode = get_inode(super_block.s_journal_inum);
+  Inode const& journal_inode = get_inode(super_block.s_journal_inum);
   // Find the block range used by the journal.
   smallest_block_nr = block_count(super_block);
   largest_block_nr = 0;
@@ -3997,7 +3997,7 @@ static void init_journal(void)
     }
   }
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
-  Inode* inode = reinterpret_cast<Inode*>(block_buf);
+  Inode const* inode = reinterpret_cast<Inode const*>(block_buf);
   // Run over all descriptors, in increasing sequence number.
   for (std::vector<Descriptor*>::iterator iter = all_descriptors.begin(); iter != all_descriptors.end(); ++iter)
   {
@@ -4292,7 +4292,7 @@ void get_inodes_from_journal(int inode, std::vector<std::pair<int, Inode> >& ino
       ASSERT(tag.block() == block);
       static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
       get_block(descriptor.block(), block_buf);
-      Inode* inode_ptr = reinterpret_cast<Inode*>(block_buf + offset);
+      Inode const* inode_ptr = reinterpret_cast<Inode const*>(block_buf + offset);
       inodes.push_back(std::pair<int, Inode>(descriptor.sequence(), *inode_ptr));
     }
   }
@@ -4315,7 +4315,7 @@ void inode_refers_to_action(int blocknr, void* ptr)
 void iterate_over_all_blocks_of__with__inode_refers_to_action(void) { inode_refers_to_action(0, NULL); }
 #endif
 
-bool inode_refers_to(Inode& inode, int block_number)
+bool inode_refers_to(Inode const& inode, int block_number)
 {
   inode_refers_to_st data;
   data.block_number = block_number;
@@ -4341,7 +4341,7 @@ int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int 
 {
   if (is_allocated(inode_number))
   {
-    Inode& real_inode = get_inode(inode_number);
+    Inode const& real_inode = get_inode(inode_number);
     if (is_directory(real_inode) && inode_refers_to(real_inode, directory_block_number))
       return std::numeric_limits<int>::max();
   }
@@ -4637,7 +4637,7 @@ void init_dir_inode_to_block_cache(void)
     blocknr_vector_type const bv = dir_inode_to_block_cache[i];
     if (allocated)
     {
-      Inode& inode = get_inode(i);
+      Inode const& inode = get_inode(i);
       if (is_directory(inode))
       {
 	++ainc;
@@ -4922,7 +4922,7 @@ Directory::Directory(uint32_t inode_number, int first_block) : M_inode_number(in
 
 typedef std::map<uint32_t, blocknr_vector_type> inode_to_extended_blocks_map_type;
 
-bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode&, bool, bool, bool, bool, bool, bool, Parent* parent, void*)
+bool init_directories_action(ext3_dir_entry_2 const& dir_entry, Inode const&, bool, bool, bool, bool, bool, bool, Parent* parent, void*)
 {
   // Get the inode number.
   uint32_t const inode_number = dir_entry.inode;
@@ -5049,7 +5049,7 @@ struct extended_directory_action_data_st {
   std::map<uint32_t, int> unlinked;	// inode to count (number of times an unlinked dir_entry refers to it).
 };
 
-bool filename_heuristics_action(ext3_dir_entry_2 const& dir_entry, Inode& UNUSED(inode),
+bool filename_heuristics_action(ext3_dir_entry_2 const& dir_entry, Inode const& UNUSED(inode),
     bool UNUSED(deleted), bool UNUSED(allocated), bool UNUSED(reallocated), bool UNUSED(zero_inode), bool UNUSED(linked), bool UNUSED(filtered),
     Parent*, void* data)
 {
@@ -5060,10 +5060,10 @@ bool filename_heuristics_action(ext3_dir_entry_2 const& dir_entry, Inode& UNUSED
 }
 
 #ifdef CPPGRAPH
-void iterate_over_directory__with__filename_heuristics_action(void) { (void)filename_heuristics_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+void iterate_over_directory__with__filename_heuristics_action(void) { (void)filename_heuristics_action(*(ext3_dir_entry_2 const*)NULL, *(Inode const*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
 #endif
 
-bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
+bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode const& inode,
     bool UNUSED(deleted), bool UNUSED(allocated), bool reallocated, bool zero_inode, bool linked, bool UNUSED(filtered), Parent*, void* ptr)
 {
   extended_directory_action_data_st* data = reinterpret_cast<extended_directory_action_data_st*>(ptr);
@@ -5102,7 +5102,7 @@ bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode& inode,
 }
 
 #ifdef CPPGRAPH
-void iterate_over_directory__with__extended_directory_action(void) { (void)extended_directory_action(*(ext3_dir_entry_2 const*)NULL, *(Inode*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
+void iterate_over_directory__with__extended_directory_action(void) { (void)extended_directory_action(*(ext3_dir_entry_2 const*)NULL, *(Inode const*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
 #endif
 
 void init_directories(void)
@@ -5279,7 +5279,7 @@ void init_directories(void)
     }
 
     // Get root inode.
-    Inode& root_inode(get_inode(EXT3_ROOT_INO));
+    Inode const& root_inode(get_inode(EXT3_ROOT_INO));
     Parent parent(&root_inode, EXT3_ROOT_INO);
     // Get the block that refers to inode EXT3_ROOT_INO.
     int root_blocknr = dir_inode_to_block(EXT3_ROOT_INO);
@@ -5848,7 +5848,7 @@ static void show_journal_inodes(int inodenr)
   uint32_t last_mtime = std::numeric_limits<uint32_t>::max();
   for (std::vector<std::pair<int, Inode> >::iterator iter = inodes.begin(); iter != inodes.end(); ++iter)
   {
-    Inode& inode(iter->second);
+    Inode const& inode(iter->second);
     if (inode.mtime() != last_mtime)
     {
       last_mtime = inode.mtime();
@@ -5867,7 +5867,7 @@ enum get_undeleted_inode_type {
 
 get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence = NULL)
 {
-  Inode& real_inode(get_inode(inodenr));
+  Inode const& real_inode(get_inode(inodenr));
   if (!real_inode.is_deleted())
   {
     inode = real_inode;
@@ -5877,7 +5877,7 @@ get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* seq
   get_inodes_from_journal(inodenr, inodes);
   for (std::vector<std::pair<int, Inode> >::iterator iter = inodes.begin(); iter != inodes.end(); ++iter)
   {
-    Inode& journal_inode(iter->second);
+    Inode const& journal_inode(iter->second);
     if (!journal_inode.is_deleted())
     {
       inode = journal_inode;
@@ -6088,7 +6088,7 @@ void restore_file(std::string const& outfile)
     }
     inodenr = directory_iter->second.inode_number();
   }
-  Inode real_inode = get_inode(inodenr);
+  Inode const real_inode = get_inode(inodenr);
   std::string::size_type slash = outfile.find_last_of('/');
   if (slash != std::string::npos)
   {

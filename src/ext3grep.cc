@@ -5250,6 +5250,126 @@ bool extended_directory_action(ext3_dir_entry_2 const& dir_entry, Inode const& i
 void iterate_over_directory__with__extended_directory_action(void) { (void)extended_directory_action(*(ext3_dir_entry_2 const*)NULL, *(Inode const*)NULL, 0, 0, 0, 0, 0, 0, NULL, NULL); }
 #endif
 
+bool find_inode_number_of_extended_directory_block(int blocknr, unsigned char* block_buf, uint32_t& inode_number, uint32_t& inode_from_journal)
+{
+  block_to_dir_inode_map_type::iterator iter = block_to_dir_inode_map.find(blocknr);
+  inode_from_journal = (iter == block_to_dir_inode_map.end()) ? 0 : iter->second;
+  get_block(blocknr, block_buf);
+  extended_directory_action_data_st data;
+  data.blocknr = blocknr;
+#ifdef CPPGRAPH
+  // Let cppgraph know that we call extended_directory_action from here.
+  iterate_over_directory__with__extended_directory_action();
+#endif
+  ++no_filtering;
+  iterate_over_directory(block_buf, blocknr, extended_directory_action, NULL, &data);
+  --no_filtering;
+  bool linked = (data.linked.size() > 0);
+  std::map<uint32_t, int>& inode_to_count(linked ? data.linked : data.unlinked);
+  inode_number = 0;
+  if (inode_to_count.size() > 0)
+  {
+    if (inode_to_count.size() > 1)
+    {
+      if (inode_from_journal)
+	std::cout << "Extended directory at " << blocknr << " has entries that appear to be directories, but their parent directory inode is not consistent.\n";
+      else
+      {
+	std::cout << "WARNING: extended directory at " << blocknr << " has entries that appear to be directories, "
+	    "but their parent directory inode is not consistent! I can't make this decision for you. "
+	    "You will have to manually pick an inode for this block number. The inodes that I found are (although ALL could be wrong):\n";
+	for (std::map<uint32_t, int>::iterator iter = inode_to_count.begin(); iter != inode_to_count.end(); ++iter)
+	{
+	  std::cout << "  " << iter->first << " (" << iter->second;
+	  if (iter->second == 1)
+	    std::cout << " time)\n";
+	  else
+	    std::cout << " times)\n";
+	}
+      }
+    }
+    else
+    {
+      inode_number = inode_to_count.begin()->first;
+      bool journal_disagrees_with_found_directory_inodes = inode_from_journal && inode_from_journal != inode_number;
+      if (journal_disagrees_with_found_directory_inodes)
+      {
+	std::cout << "Extended directory at " << blocknr << " appears to contains " << inode_to_count.begin()->second <<
+	    ' ' << (linked ? "linked" : "unlinked") << " directory whose parent directory has inode " <<
+	    inode_number << " but according to the journal it should be " << inode_from_journal << ". Using the latter.\n";
+	// We trust our journal based algorithm more because the content of
+	// inodes can hardly be trusted: they can be reused and not refer
+	// to this dir entry at all. Especially in the case of !feature_incompat_filetype
+	// where even regular files' inodes can have been reused (by directories)
+	// this will happen frequently, but independent of the frequency at which
+	// it occurs, the journal is simply more reliable.
+	inode_number = inode_from_journal;
+	// However...
+	if (linked)
+	  std::cout << "WARNING: We really only expect that to happen for unlinked directory entries. Have a look at block " << blocknr << '\n';
+	if (inode_to_count.begin()->second > 1)
+	  std::cout << "WARNING: It's suspiciously weird that there are more than one such \"directories\". Have a look at block " << blocknr << '\n';
+      }
+      else
+	std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_number <<
+	    " (from " << inode_to_count.begin()->second << ' ' << (linked ? "linked" : "unlinked") << " directories).\n";
+    }
+  }
+  if (!inode_number)	// Not found yet?
+  {
+#ifdef CPPGRAPH
+    // Let cppgraph know that we call filename_heuristics_action from here.
+    iterate_over_directory__with__filename_heuristics_action();
+#endif
+    // Do some heuristics on the filenames.
+    std::set<std::string> filenames;
+    ++no_filtering;
+    iterate_over_directory(block_buf, blocknr, filename_heuristics_action, NULL, &filenames);
+    --no_filtering;
+    if (filenames.empty())
+    {
+      if (inode_from_journal)
+      {
+	std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (empty; from journal)).\n";
+	inode_number = inode_from_journal;
+      }
+      else
+	std::cout << "Could not find an inode for empty extended directory at " << blocknr << '\n';
+    }
+    else
+    {
+      std::string dir = parent_directory(blocknr, filenames); 
+      if (dir.empty())
+      {
+	if (inode_from_journal)
+	{
+	  std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (from journal).\n";
+	  inode_number = inode_from_journal;
+	}
+	else
+	  std::cout << "Could not find an inode for extended directory at " << blocknr << ", disregarding it's contents.\n";
+      }
+      else
+      {
+	all_directories_type::iterator directory_iter = all_directories.find(dir);
+	if (directory_iter == all_directories.end())
+	{
+	  std::cout << "Extended directory at " << blocknr << " belongs to directory " << dir << " which isn't in all_directories yet.\n";
+	  return true;	// Needs to be processed again later.
+	}
+	else
+	{
+	  inode_number = directory_iter->second.inode_number();
+	  std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_number << '\n';
+	  if (inode_from_journal && inode_from_journal != inode_number)
+	    std::cout << "WARNING: according to the journal it should have been inode " << inode_from_journal << "!?\n";
+	}
+      }
+    }
+  }
+  return false;	// Done
+}
+
 void init_directories(void)
 {
   static bool initialized = false;
@@ -5286,133 +5406,29 @@ void init_directories(void)
     for (std::vector<int>::iterator iter = extended_blocks.begin(); iter != extended_blocks.end(); ++iter)
     {
       int blocknr = *iter;
-      block_to_dir_inode_map_type::iterator iter = block_to_dir_inode_map.find(blocknr);
-      uint32_t inode_from_journal = (iter == block_to_dir_inode_map.end()) ? 0 : iter->second;
-      get_block(blocknr, block_buf);
-      extended_directory_action_data_st data;
-      data.blocknr = blocknr;
-#ifdef CPPGRAPH
-      // Let cppgraph know that we call extended_directory_action from here.
-      iterate_over_directory__with__extended_directory_action();
-#endif
-      ++no_filtering;
-      iterate_over_directory(block_buf, blocknr, extended_directory_action, NULL, &data);
-      --no_filtering;
-      bool linked = (data.linked.size() > 0);
-      std::map<uint32_t, int>& inode_to_count(linked ? data.linked : data.unlinked);
-      uint32_t inode_number = 0;
-      if (inode_to_count.size() > 0)
+
+      uint32_t inode_number;
+      uint32_t inode_from_journal;
+      bool needs_reprocessing = find_inode_number_of_extended_directory_block(blocknr, block_buf, inode_number, inode_from_journal);
+
+      if (needs_reprocessing)
       {
-        if (inode_to_count.size() > 1)
+	// FIXME: should be processed again after adding extended directory blocks to all_directories!
+	std::cout << "FIXME: Extended directory at " << blocknr << " belongs to non-existent directory!\n";
+	// Fall back to journal.
+	if (inode_from_journal)
 	{
-	  if (inode_from_journal)
-	    std::cout << "Extended directory at " << blocknr << " has entries that appear to be directories, but their parent directory inode is not consistent.\n";
-	  else
-	  {
-	    std::cout << "WARNING: extended directory at " << blocknr << " has entries that appear to be directories, "
-	        "but their parent directory inode is not consistent! I can't make this decision for you. "
-		"You will have to manually pick an inode for this block number. The inodes that I found are (although ALL could be wrong):\n";
-	    for (std::map<uint32_t, int>::iterator iter = inode_to_count.begin(); iter != inode_to_count.end(); ++iter)
-	    {
-	      std::cout << "  " << iter->first << " (" << iter->second;
-	      if (iter->second == 1)
-		std::cout << " time)\n";
-	      else
-	        std::cout << " times)\n";
-	    }
-	  }
-	}
-	else
-	{
-	  inode_number = inode_to_count.begin()->first;
-	  bool journal_disagrees_with_found_directory_inodes = inode_from_journal && inode_from_journal != inode_number;
-	  if (journal_disagrees_with_found_directory_inodes)
-	  {
-	    std::cout << "Extended directory at " << blocknr << " appears to contains " << inode_to_count.begin()->second <<
-		' ' << (linked ? "linked" : "unlinked") << " directory whose parent directory has inode " <<
-		inode_number << " but according to the journal it should be " << inode_from_journal << ". Using the latter.\n";
-	    // We trust our journal based algorithm more because the content of
-	    // inodes can hardly be trusted: they can be reused and not refer
-	    // to this dir entry at all. Especially in the case of !feature_incompat_filetype
-	    // where even regular files' inodes can have been reused (by directories)
-	    // this will happen frequently, but independent of the frequency at which
-	    // it occurs, the journal is simply more reliable.
-	    inode_number = inode_from_journal;
-	    // However...
-	    if (linked)
-	      std::cout << "WARNING: We really only expect that to happen for unlinked directory entries. Have a look at block " << blocknr << '\n';
-	    if (inode_to_count.begin()->second > 1)
-	      std::cout << "WARNING: It's suspiciously weird that there are more than one such \"directories\". Have a look at block " << blocknr << '\n';
-	  }
-	  else
-	    std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_number <<
-		" (from " << inode_to_count.begin()->second << ' ' << (linked ? "linked" : "unlinked") << " directories).\n";
+	  std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (fall back to journal).\n";
+	  inode_number = inode_from_journal;
 	}
       }
-      if (!inode_number)	// Not found yet?
-      {
-#ifdef CPPGRAPH
-	// Let cppgraph know that we call filename_heuristics_action from here.
-	iterate_over_directory__with__filename_heuristics_action();
-#endif
-	// Do some heuristics on the filenames.
-	std::set<std::string> filenames;
-	++no_filtering;
-	iterate_over_directory(block_buf, blocknr, filename_heuristics_action, NULL, &filenames);
-	--no_filtering;
-	if (filenames.empty())
-	{
-	  if (inode_from_journal)
-	  {
-	    std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (empty; from journal)).\n";
-	    inode_number = inode_from_journal;
-	  }
-	  else
-	    std::cout << "Could not find an inode for empty extended directory at " << blocknr << '\n';
-	}
-	else
-	{
-	  std::string dir = parent_directory(blocknr, filenames); 
-	  if (dir.empty())
-	  {
-	    if (inode_from_journal)
-	    {
-	      std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (from journal).\n";
-	      inode_number = inode_from_journal;
-	    }
-            else
-	      std::cout << "Could not find an inode for extended directory at " << blocknr << ", disregarding it's contents.\n";
-	  }
-	  else
-	  {
-	    all_directories_type::iterator directory_iter = all_directories.find(dir);
-	    if (directory_iter == all_directories.end())
-	    {
-	      // FIXME: should be processed again after adding extended directory blocks to all_directories!
-	      std::cout << "FIXME: Extended directory at " << blocknr << " belongs to directory " << dir << " but that directory doesn't exist!\n";
-	      // Fall back to journal.
-	      if (inode_from_journal)
-	      {
-		std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_from_journal << " (fall back to journal).\n";
-		inode_number = inode_from_journal;
-	      }
-	    }
-	    else
-	    {
-	      inode_number = directory_iter->second.inode_number();
-	      std::cout << "Extended directory at " << blocknr << " belongs to inode " << inode_number << '\n';
-	      if (inode_from_journal && inode_from_journal != inode_number)
-	        std::cout << "WARNING: according to the journal it should have been inode " << inode_from_journal << "!?\n";
-	    }
-	  }
-	}
-      }
+
       if (inode_number)
       {
-        // Add the found inode number of this extended block to inode_to_extended_blocks_map.
-        inode_to_extended_blocks_map_type::iterator iter = inode_to_extended_blocks_map.find(inode_number);
-	if (iter != inode_to_extended_blocks_map.end())
-	  iter->second.push_back(blocknr);
+	// Add the found inode number of this extended block to inode_to_extended_blocks_map.
+	inode_to_extended_blocks_map_type::iterator iter2 = inode_to_extended_blocks_map.find(inode_number);
+	if (iter2 != inode_to_extended_blocks_map.end())
+	  iter2->second.push_back(blocknr);
 	else
 	{
 	  blocknr_vector_type bv;
@@ -5442,8 +5458,8 @@ void init_directories(void)
     }
 
 #ifdef CPPGRAPH
-      // Let cppgraph know that we call init_directories_action from here.
-      iterate_over_directory__with__init_directories_action();
+    // Let cppgraph know that we call init_directories_action from here.
+    iterate_over_directory__with__init_directories_action();
 #endif
 
     // Run over all directory blocks and add all start blocks to all_directories, updating inode_to_directory.

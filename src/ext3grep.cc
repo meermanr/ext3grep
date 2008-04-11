@@ -1409,7 +1409,7 @@ void run_program(void)
   }
   if (commandline_inode != -1)
   {
-    if ((uint32_t)commandline_inode >= inode_count_)
+    if ((uint32_t)commandline_inode > inode_count_)
     {
       std::cout << std::flush;
       std::cerr << progname << ": --inode: inode " << commandline_inode << " is out of range. There are only " << inode_count_ << " inodes." << std::endl;
@@ -1440,7 +1440,7 @@ void run_program(void)
   }
   if (commandline_show_journal_inodes != -1)
   {
-    if ((uint32_t)commandline_show_journal_inodes >= inode_count_)
+    if ((uint32_t)commandline_show_journal_inodes > inode_count_)
     {
       std::cout << std::flush;
       std::cerr << progname << ": --show-journal-inodes: inode " << commandline_show_journal_inodes <<
@@ -1942,6 +1942,12 @@ void run_program(void)
   // Handle --inode-to-block
   if (commandline_inode_to_block != -1)
   {
+    if ((uint32_t)commandline_inode_to_block > inode_count_)
+    {
+      std::cout << std::flush;
+      std::cerr << progname << ": --inode-to-block: inode " << commandline_inode_to_block << " is out of range. There are only " << inode_count_ << " inodes." << std::endl;
+      exit(EXIT_FAILURE);
+    }
     int block = inode_to_block(super_block, commandline_inode_to_block);
     std::cout << "Inode " << commandline_inode_to_block << " resides in block " << block <<
         " at offset 0x" << std::hex << ((commandline_inode_to_block - block_to_inode(block)) * inode_size_) << std::dec << ".\n";

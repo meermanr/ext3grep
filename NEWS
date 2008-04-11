@@ -1,3 +1,9 @@
+ext3grep-0.6.0
+
+	Don't completely and silently break if any file has a single quote in it's name.
+	Don't exhaust the 32-bit address space with mmaps, by mmapping at most 256 inode tables on x86.
+	Added support for recovering files larger than 2 GB.
+
 ext3grep-0.5.0
 
 	Set the correct modification time on files.

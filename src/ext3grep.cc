@@ -453,7 +453,11 @@ void inode_unmap(int group)
 }
 
 // Maximum number of simultaneously mmapped inode tables.
-int const max_mmaps = (sizeof(void*) == 4) ? 16 : 1024;
+// One inode table is roughly 4 MB: 32768 inodes times 128 bytes.
+// If we want to maximally use 1 GB of address space for those,
+// we should map at most 1024/4 = 256 inode tables.
+// On 64-bit machines, this can be infinitely higher.
+int const max_mmaps = (sizeof(void*) == 4) ? 256 : std::numeric_limits<int>::max();
 
 void inode_mmap(int group)
 {

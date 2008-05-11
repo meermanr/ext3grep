@@ -1377,7 +1377,7 @@ void run_program(void)
   feature_incompat_filetype = super_block.s_feature_incompat & EXT3_FEATURE_INCOMPAT_FILETYPE;
 
   // Do we have a journal?
-  if (super_block.s_journal_dev == 0)
+  if (super_block.s_journal_inum != 0)
   {
     InodePointer journal_inode = get_inode(super_block.s_journal_inum);
     int first_block = journal_inode->block()[0];
@@ -1401,10 +1401,10 @@ void run_program(void)
   }
 
   // Check commandline options against superblock contents.
-  if (commandline_journal && super_block.s_journal_dev)
+  if (commandline_journal && !super_block.s_journal_inum)
   {
     std::cout << std::flush;
-    std::cerr << progname << ": --journal: The journal appears to be external." << std::endl;
+    std::cerr << progname << ": --journal: The journal is on an external device. Please add support for it." << std::endl;
     exit(EXIT_FAILURE);
   }
   if (commandline_inode != -1)
@@ -4219,7 +4219,7 @@ static bool is_in_journal(int blocknr)
 
 static bool is_journal(int blocknr)
 {
-  if (super_block.s_journal_dev)
+  if (!super_block.s_journal_inum)
   {
     ASSERT(!commandline_journal);
     return false;

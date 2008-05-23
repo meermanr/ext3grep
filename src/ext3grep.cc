@@ -4884,6 +4884,7 @@ void init_dir_inode_to_block_cache(void)
     // sequence number.
 #if INCLUDE_JOURNAL
     uint32_t highest_sequence = 0;
+    int min_block = std::numeric_limits<int>::max();
     int journal_block_count = 0;
     int total_block_count = 0;
     iter = dirs.begin();
@@ -4894,19 +4895,13 @@ void init_dir_inode_to_block_cache(void)
       {
         ++journal_block_count;
 	block_in_journal_to_descriptors_map_type::iterator iter2 = block_in_journal_to_descriptors_map.find(iter->block());
-	if (iter2 == block_in_journal_to_descriptors_map.end())
+	if (iter2 != block_in_journal_to_descriptors_map.end())
 	{
-	  std::cout << "Cannot find block " << iter->block() << " (in journal) in block_in_journal_to_descriptors_map!\n";
-	  std::cout << "Dump of block_in_journal_to_descriptors_map:\n";
-	  for (block_in_journal_to_descriptors_map_type::iterator iter3 = block_in_journal_to_descriptors_map.begin(); iter3 != block_in_journal_to_descriptors_map.end(); ++iter3)
-	  {
-	    std::cout << iter3->first << ", {" << iter3->second->sequence() << ", " << iter3->second->block() << "}\n";
-	  }
-	  std::cout << std::flush;
+	  uint32_t sequence = iter2->second->sequence();
+	  highest_sequence = std::max(highest_sequence, sequence);
 	}
-	ASSERT(iter2 != block_in_journal_to_descriptors_map.end());
-	uint32_t sequence = iter2->second->sequence();
-	highest_sequence = std::max(highest_sequence, sequence);
+	else
+	  min_block = std::min(min_block, iter->block());
       }
       else
         break;	// No need to continue.
@@ -4925,7 +4920,16 @@ void init_dir_inode_to_block_cache(void)
         if (need_keep_one_journal)
 	{
 	  block_in_journal_to_descriptors_map_type::iterator iter2 = block_in_journal_to_descriptors_map.find(iter->block());
-	  if (iter2->second->sequence() == highest_sequence)
+	  if (highest_sequence == 0 && iter->block() == min_block)
+	  {
+	    std::cout << std::flush;
+	    std::cerr << "WARNING: More than one directory block references inode " << i <<
+	        " but all of them are in the journal and none of them have a descriptor block (the start of the transaction was probably overwritten)."
+		" The mostly likely correct directory block would be block " << min_block <<
+		" but we're disregarding it because ext3grep can't deal with journal blocks without a descriptor block.";
+	    std::cerr << std::endl;
+	  }
+	  if (iter2 != block_in_journal_to_descriptors_map.end() && iter2->second->sequence() == highest_sequence)
 	  {
 	    ++iter;
 	    continue;
@@ -5821,7 +5825,15 @@ void init_files(void)
         continue;
       ASSERT(is_journal(directory_block.block()));
       block_in_journal_to_descriptors_map_type::iterator descriptors_iter = block_in_journal_to_descriptors_map.find(directory_block.block());
-      ASSERT(descriptors_iter != block_in_journal_to_descriptors_map.end());
+      if (descriptors_iter == block_in_journal_to_descriptors_map.end())
+      {
+	std::cout << std::flush;
+	std::cerr << "WARNING: Disregarding directory block " << directory_block.block() << " from the journal, "
+	    " that appears to belong to a directory with inode number " << directory.inode_number() <<
+	    ", because it doesn't have a descriptor block (the start of the transaction was probably overwritten)."
+	    " We're disregarding it because ext3grep can't deal with journal blocks without a descriptor block." << std::endl;
+        continue;
+      }
       Descriptor& descriptor(*descriptors_iter->second);
       ASSERT(descriptor.descriptor_type() == dt_tag);
       //DescriptorTag& descriptor_tag(static_cast<DescriptorTag&>(descriptor));

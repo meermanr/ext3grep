@@ -367,10 +367,14 @@ void init_consts()
   assert(block_size_ == fragment_size(super_block));
   // The inode bitmap has to fit in a single block.
   assert(inodes_per_group(super_block) <= 8 * block_size_);
-  // inode_size is expected to be (at least) 128.
-  assert(inode_size_ >= 128);
-  // But theoretically sizeof(Inode) can be more (not at the moment).
-  assert((size_t)inode_size_ <= sizeof(Inode));
+  // The rest of the code assumes that sizeof(Inode) is a power of 2.
+  assert(sizeof(Inode) == 128);
+  // inode_size is expected to be (at least) the size of Inode.
+  assert(inode_size_ >= sizeof(Inode));
+  // Each inode must fit within one block.
+  assert(inode_size_ <= block_size_);
+  // inode_size must be a power of 2.
+  assert(!((inode_size_ - 1) & inode_size_));
   // There should fit exactly an integer number of inodes in one block.
   assert((block_size_ / inode_size_) * inode_size_ == block_size_);
   // Space needed for the inode table should match the returned value of the number of blocks they need.
@@ -417,7 +421,6 @@ void init_consts()
   // We use this array to know of which groups we loaded the metadata. Therefore zero it out.
   std::memset(block_bitmap, 0, sizeof(bitmap_t*) * groups_);
   inode_bitmap = new bitmap_t* [groups_];
-  assert((size_t)inode_size_ == sizeof(Inode));			// This fails if kernel headers are used.
 
   // Initialize group_descriptor_table.
 
@@ -568,10 +571,25 @@ class InodePointer {
 
 Inode InodePointer::S_fake_inode;	// This will be filled with zeroes.
 
+inline unsigned int bit_to_all_inodes_group_index(unsigned int bit)
+{
+#if USE_MMAP
+  // If bit is incremented by one, we need to skip inode_size_ bytes in the (mmap-ed) inode table.
+  // Since the type of the table is Inode* the index needs to be incremented with the number of Inode structs that we need to skip.
+  // Because both inode_size_ and sizeof(Inode) are a power of 2 and inode_size_ >= sizeof(Inode), this amounts to inode_size_ / sizeof(Inode)
+  // index incrementation per bit.
+  return bit * (inode_size_ / sizeof(Inode));
+#else
+  // If no mmap is used, the table only contains the first 128 bytes of each inode.
+  return bit;
+#endif
+}
+
 inline InodePointer get_inode(uint32_t inode)
 {
   int group = (inode - 1) / inodes_per_group_;
   unsigned int bit = inode - 1 - group * inodes_per_group_;
+  // The bit in the bit mask must fit inside a single block.
   ASSERT(bit < 8U * block_size_);
 #if USE_MMAP
   if (all_inodes[group] == NULL)
@@ -580,7 +598,7 @@ inline InodePointer get_inode(uint32_t inode)
   if (block_bitmap[group] == NULL)
     load_meta_data(group);
 #endif
-  return InodePointer(all_inodes[group][bit], group);
+  return InodePointer(all_inodes[group][bit_to_all_inodes_group_index(bit)], group);
 }
 
 static void print_inode_to(std::ostream& os, InodePointer inoderef)
@@ -1310,17 +1328,25 @@ void load_inodes(int group)
     load_meta_data(group);
   // The start block of the inode table.
   int block_number = group_descriptor_table[group].bg_inode_table;
-  // Load all inodes into memory.
-  all_inodes[group] = new Inode[inodes_per_group_];	// sizeof(Inode) == inode_size_
+  // Load all inodes of this group into memory.
+  char* inode_table = new char[inodes_per_group_ * inode_size_];
   device.seekg(block_to_offset(block_number));
   ASSERT(device.good());
-  device.read(reinterpret_cast<char*>(const_cast<Inode*>(all_inodes[group])), inodes_per_group_ * inode_size_);
+  device.read(inode_table, inodes_per_group_ * inode_size_);
   ASSERT(device.good());
+  all_inodes[group] = new Inode[inodes_per_group_];
+  // Copy the first 128 bytes of each inode into all_inodes[group].
+  for (int i = 0; i < inodes_per_group_; ++i)
+    std::memcpy(all_inodes[group][i], inode_table + i * inode_size_, sizeof(Inode));
+  // Free temporary table again.
+  delete [] inode_table;
 #ifdef DEBUG
   // We set this, so that we can find back where an inode struct came from
   // during debugging of this program in gdb. It is not used anywhere.
-  for (int ino = 0; ino < inodes_per_group_; ++ino)
-    const_cast<Inode*>(all_inodes[group])[ino].set_reserved2(ino + 1 + group * inodes_per_group_);
+  // Note that THIS is the only reason that !USE_MMAP exists: we can't write to a mmapped area.
+  // Another solution would be to just allocate a seperate array for just this number, of course.
+  for (int i = 0; i < inodes_per_group_; ++i)
+    const_cast<Inode*>(all_inodes[group])[i].set_reserved2(i + 1 + group * inodes_per_group_);
 #endif
 }
 #endif
@@ -4175,7 +4201,7 @@ static void init_journal(void)
       int inode_number = block_to_inode(block_nr);
       // Run over all inodes in the journal block.
       get_block(tag->Descriptor::block(), block_buf);
-      for (unsigned int i = 0; i < block_size_ / sizeof(Inode); ++i, ++inode_number)
+      for (unsigned int i = 0; i < block_size_ / sizeof(Inode); i += inode_size_ / sizeof(Inode), ++inode_number)
       {
         // Skip non-directories.
 	if (!is_directory(inode[i]))

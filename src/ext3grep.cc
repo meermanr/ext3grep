@@ -1285,6 +1285,7 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
 	action(block_ptr[i], data);
   if (block_ptr[EXT3_IND_BLOCK])
   {
+    ASSERT(is_block_number(block_ptr[EXT3_IND_BLOCK]));
     if ((indirect_mask & indirect_bit))
       action(block_ptr[EXT3_IND_BLOCK], data);
     if ((indirect_mask & direct_bit))
@@ -1293,6 +1294,7 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
   }
   if (block_ptr[EXT3_DIND_BLOCK])
   {
+    ASSERT(is_block_number(block_ptr[EXT3_DIND_BLOCK]));
     if ((indirect_mask & indirect_bit))
       action(block_ptr[EXT3_DIND_BLOCK], data);
     if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[EXT3_DIND_BLOCK], action, data, indirect_mask))
@@ -1300,6 +1302,7 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
   }
   if (block_ptr[EXT3_TIND_BLOCK])
   {
+    ASSERT(is_block_number(block_ptr[EXT3_TIND_BLOCK]));
     if ((indirect_mask & indirect_bit))
       action(block_ptr[EXT3_TIND_BLOCK], data);
     if (iterate_over_all_blocks_of_tripple_indirect_block(block_ptr[EXT3_TIND_BLOCK], action, data, indirect_mask))

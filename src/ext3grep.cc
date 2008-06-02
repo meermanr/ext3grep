@@ -217,6 +217,7 @@ hist_type commandline_histogram = hist_none;
 std::string commandline_inode_dirblock_table;
 int commandline_show_journal_inodes = -1;
 std::string commandline_restore_file;
+std::string commandline_restore_inode;
 bool commandline_restore_all = false;
 bool commandline_show_hardlinks = false;
 bool commandline_debug = false;
@@ -370,7 +371,7 @@ void init_consts()
   // The rest of the code assumes that sizeof(Inode) is a power of 2.
   assert(sizeof(Inode) == 128);
   // inode_size is expected to be (at least) the size of Inode.
-  assert(inode_size_ >= sizeof(Inode));
+  assert((size_t)inode_size_ >= sizeof(Inode));
   // Each inode must fit within one block.
   assert(inode_size_ <= block_size_);
   // inode_size must be a power of 2.
@@ -570,6 +571,8 @@ class InodePointer {
 };
 
 Inode InodePointer::S_fake_inode;	// This will be filled with zeroes.
+
+static void restore_inode(int inodenr, InodePointer real_inode, std::string const& outfile);
 
 inline unsigned int bit_to_all_inodes_group_index(unsigned int bit)
 {
@@ -1739,7 +1742,7 @@ void run_program(void)
     }
   }
   // Make sure the output directory exists.
-  if (!commandline_restore_file.empty() || commandline_restore_all)
+  if (!commandline_restore_file.empty() || commandline_restore_all || !commandline_restore_inode.empty())
   {
     struct stat statbuf;
     if (stat(outputdir.c_str(), &statbuf) == -1)
@@ -1773,6 +1776,21 @@ void run_program(void)
   // Handle --restore-file
   if (!commandline_restore_file.empty())
     restore_file(commandline_restore_file);
+  // Handle --restore-inode
+  if (!commandline_restore_inode.empty())
+  {
+    std::istringstream is(commandline_restore_inode);
+    int inodenr;
+    char comma;
+    while(is >> inodenr)
+    {
+      InodePointer real_inode = get_inode(inodenr);
+      std::ostringstream oss;
+      oss << "inode." << inodenr;
+      restore_inode(inodenr, real_inode, oss.str());
+      is >> comma;
+    };
+  }
   // Handle --show-hardlinks
   if (commandline_show_hardlinks)
     show_hardlinks();
@@ -2435,6 +2453,10 @@ static void print_usage(std::ostream& os)
   os << "                         block numbers found and the inodes used for each file.\n";
   os << "  --show-journal-inodes ino\n";
   os << "                         Show copies of inode 'ino' still in the journal.\n";
+  os << "  --restore-inode ino[,ino,...]\n";
+  os << "                         Restore the file(s) with known inode number 'ino'.\n";
+  os << "                         The restored files are created in ./" << outputdir << "\n";
+  os << "                         with their inode number as extension (ie, inode.12345).\n";
   os << "  --restore-file 'path'  Will restore file 'path'. 'path' is relative to root\n";
   os << "                         of the partition and does not start with a '/' (it\n";
   os << "                         must be one of the paths returned by --dump-names).\n";
@@ -2491,6 +2513,7 @@ enum opts {
   opt_inode_dirblock_table,
   opt_show_journal_inodes,
   opt_restore_file,
+  opt_restore_inode,
   opt_restore_all,
   opt_show_hardlinks,
   opt_help,
@@ -2534,6 +2557,7 @@ static void decode_commandline_options(int& argc, char**& argv)
     {"show-path-inodes", 0, &long_option, opt_show_path_inodes},
     {"inode-dirblock-table", 1, &long_option, opt_inode_dirblock_table},
     {"show-journal-inodes", 1, &long_option, opt_show_journal_inodes},
+    {"restore-inode", 1, &long_option, opt_restore_inode},
     {"restore-file", 1, &long_option, opt_restore_file},
     {"restore-all", 0, &long_option, opt_restore_all},
     {"show-hardlinks", 0, &long_option, opt_show_hardlinks},
@@ -2632,6 +2656,9 @@ static void decode_commandline_options(int& argc, char**& argv)
 	    break;
 	  case opt_inode_dirblock_table:
 	    commandline_inode_dirblock_table = optarg;
+	    break;
+	  case opt_restore_inode:
+	    commandline_restore_inode = optarg;
 	    break;
 	  case opt_restore_file:
 	    commandline_restore_file = optarg;
@@ -2793,6 +2820,7 @@ static void decode_commandline_options(int& argc, char**& argv)
        commandline_search_inode != -1||
        commandline_search_zeroed_inodes ||
        commandline_inode_to_block != -1 ||
+       !commandline_restore_inode.empty() ||
        !commandline_restore_file.empty() ||
        commandline_restore_all ||
        commandline_show_hardlinks);
@@ -6327,6 +6355,11 @@ void restore_file(std::string const& outfile)
       exit(EXIT_FAILURE);
     }
   }
+  restore_inode(inodenr, real_inode, outfile);
+}
+
+void restore_inode(int inodenr, InodePointer real_inode, std::string const& outfile)
+{
   std::string outputdir_outfile = outputdir + outfile;
   if (is_directory(*real_inode))
   {

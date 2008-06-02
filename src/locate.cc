@@ -98,7 +98,11 @@ void load_locate_data(void)
 int const test_blocknr = 1418523;
 #endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames)
+std::string parent_directory(int
+#if 0
+    blocknr
+#endif
+    , std::set<std::string> const& filenames)
 {
   if (!initialized)
     load_locate_data();

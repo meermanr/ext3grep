@@ -1215,8 +1215,10 @@ void iterate_over_all_blocks_of__with__print_directory_action(void) { print_dire
 unsigned int const direct_bit = 1;		// Call action() for real blocks.
 unsigned int const indirect_bit = 2;		// Call action() for (double/tripple) indirect blocks.
 
-bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int)
+bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int, bool diagnose)
 {
+  if (diagnose)
+    std::cout << "Processing indirect block " << block << ": " << std::flush;
   unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
   unsigned int i = 0;
@@ -1225,16 +1227,26 @@ bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, vo
     if (block_ptr[i])
     {
       if (!is_block_number(block_ptr[i]))
+      {
+        if (diagnose)
+	  std::cout << "entry " << i << " contains block number " << block_ptr[i] << ", which is too large." << std::endl;
         break;
-      action(block_ptr[i], data);
+      }
+      if (!diagnose)
+	action(block_ptr[i], data);
     }
     ++i;
   }
-  return i < block_size_ / sizeof(__le32);
+  bool result = (i < block_size_ / sizeof(__le32));
+  if (diagnose && !result)
+    std::cout << "OK" << std::endl;
+  return result;
 }
 
-bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask)
+bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask, bool diagnose)
 {
+  if (diagnose)
+    std::cout << "Start processing double indirect block " << block << '.' << std::endl;
   unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
   unsigned int i = 0;
@@ -1243,20 +1255,28 @@ bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(
     if (block_ptr[i])
     {
       if (!is_block_number(block_ptr[i]))
+      {
+        if (diagnose)
+	  std::cout << "Entry " << i << " of double indirect block " << block << " contains block number " << block_ptr[i] << ", which is too large." << std::endl;
         break;
-      if ((indirect_mask & indirect_bit))
+      }
+      if ((indirect_mask & indirect_bit) && !diagnose)
         action(block_ptr[i], data);
       if ((indirect_mask & direct_bit))
-        if (iterate_over_all_blocks_of_indirect_block(block_ptr[i], action, data, indirect_mask))
+        if (iterate_over_all_blocks_of_indirect_block(block_ptr[i], action, data, indirect_mask, diagnose))
 	  break;
     }
     ++i;
   }
+  if (diagnose)
+    std::cout << "End processing double indirect block " << block << '.' << std::endl;
   return i < block_size_ / sizeof(__le32);
 }
 
-bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask)
+bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask, bool diagnose)
 {
+  if (diagnose)
+    std::cout << "Start processing tripple indirect block " << block << '.' << std::endl;
   unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
   unsigned int i = 0;
@@ -1265,60 +1285,75 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)
     if (block_ptr[i])
     {
       if (!is_block_number(block_ptr[i]))
+      {
+        if (diagnose)
+	  std::cout << "Entry " << i << " of tripple indirect block " << block << " contains block number " << block_ptr[i] << ", which is too large." << std::endl;
         break;
-      if ((indirect_mask & indirect_bit))
+      }
+      if ((indirect_mask & indirect_bit) && !diagnose)
         action(block_ptr[i], data);
-      if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[i], action, data, indirect_mask))
+      if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[i], action, data, indirect_mask, diagnose))
         break;
     }
     ++i;
   }
+  if (diagnose)
+    std::cout << "End processing tripple indirect block " << block << '.' << std::endl;
   return i < block_size_ / sizeof(__le32);
 }
 
 // Returns true if an indirect block was encountered that doesn't look like an indirect block anymore.
-bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit)
+bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit, bool diagnose = false)
 {
   if (is_symlink(inode) && inode.blocks() == 0)
     return false;		// Block pointers contain text.
   __le32 const* block_ptr = inode.block();
+  if (diagnose)
+    std::cout << "Processing direct blocks..." << std::flush;
   if ((indirect_mask & direct_bit))
     for (int i = 0; i < EXT3_NDIR_BLOCKS; ++i)
       if (block_ptr[i])
-	action(block_ptr[i], data);
+      {
+        if (diagnose)
+	  std::cout << ' ' << block_ptr[i] << std::flush;
+	else
+	  action(block_ptr[i], data);
+      }
+  if (diagnose)
+    std::cout << std::endl;
   if (block_ptr[EXT3_IND_BLOCK])
   {
     ASSERT(is_block_number(block_ptr[EXT3_IND_BLOCK]));
-    if ((indirect_mask & indirect_bit))
+    if ((indirect_mask & indirect_bit) && !diagnose)
       action(block_ptr[EXT3_IND_BLOCK], data);
     if ((indirect_mask & direct_bit))
-      if (iterate_over_all_blocks_of_indirect_block(block_ptr[EXT3_IND_BLOCK], action, data, indirect_mask))
+      if (iterate_over_all_blocks_of_indirect_block(block_ptr[EXT3_IND_BLOCK], action, data, indirect_mask, diagnose))
         return true;
   }
   if (block_ptr[EXT3_DIND_BLOCK])
   {
     ASSERT(is_block_number(block_ptr[EXT3_DIND_BLOCK]));
-    if ((indirect_mask & indirect_bit))
+    if ((indirect_mask & indirect_bit) && !diagnose)
       action(block_ptr[EXT3_DIND_BLOCK], data);
-    if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[EXT3_DIND_BLOCK], action, data, indirect_mask))
+    if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[EXT3_DIND_BLOCK], action, data, indirect_mask, diagnose))
       return true;
   }
   if (block_ptr[EXT3_TIND_BLOCK])
   {
     ASSERT(is_block_number(block_ptr[EXT3_TIND_BLOCK]));
-    if ((indirect_mask & indirect_bit))
+    if ((indirect_mask & indirect_bit) && !diagnose)
       action(block_ptr[EXT3_TIND_BLOCK], data);
-    if (iterate_over_all_blocks_of_tripple_indirect_block(block_ptr[EXT3_TIND_BLOCK], action, data, indirect_mask))
+    if (iterate_over_all_blocks_of_tripple_indirect_block(block_ptr[EXT3_TIND_BLOCK], action, data, indirect_mask, diagnose))
       return true;
   }
   return false;
 }
 
 // Same for an InodePointer.
-bool iterate_over_all_blocks_of(InodePointer inode, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit)
+bool iterate_over_all_blocks_of(InodePointer inode, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit, bool diagnose = false)
 {
   // inode is dereferenced here in good faith that no reference to it is kept (since there are no structs or classes that do so).
-  return iterate_over_all_blocks_of(*inode, action, data, indirect_mask);
+  return iterate_over_all_blocks_of(*inode, action, data, indirect_mask, diagnose);
 }
 
 //-----------------------------------------------------------------------------
@@ -6417,6 +6452,8 @@ void restore_inode(int inodenr, InodePointer real_inode, std::string const& outf
       if (reused_or_corrupted_indirect_block8)
       {
         std::cout << "WARNING: Failed to restore " << outfile << ": encountered a reused or corrupted (double/triple) indirect block!\n";
+	std::cout << "Running iterate_over_all_blocks_of again with diagnostic messages ON:\n";
+	iterate_over_all_blocks_of(inode, restore_file_action, &data, direct_bit, true);
 	// FIXME: file should be renamed.
       }
       if (chmod(outputdir_outfile.c_str(), inode_mode_to_mkdir_mode(inode.mode())) == -1)

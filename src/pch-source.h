@@ -3,7 +3,6 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <endian.h>
-#include "ext3.h"
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -41,6 +40,7 @@
 #include <vector>
 #include <bitset>
 #include <algorithm>
+#include "ext3.h"
 #include "debug.h"
 #ifdef CWDEBUG
 #include <libcwd/buf2str.h>

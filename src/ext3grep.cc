@@ -25,13 +25,13 @@
 #include "sys.h"
 #include <sys/types.h>
 #include <endian.h>
-#include "ext3.h"
 #include <utime.h>
 #include <sys/mman.h>
 #include <cassert>
 #include <ctime>
 #include <cstdlib>
 #include <getopt.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -47,6 +47,7 @@
 #include <sstream>
 #include <bitset>
 #include <algorithm>
+#include "ext3.h"
 #include "debug.h"
 #endif
 

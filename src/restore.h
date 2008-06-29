@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file restore.h Declarations for file restore.cc.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef RESTORE_H
+#define RESTORE_H
 
-#include <string>
-#include <set>
+#ifndef USE_PCH
+#include <string>	// Needed for std::string
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+#include "inode.h"	// Needed for InodePointer
 
-#endif // LOCATE_H
+// Real constants.
+std::string const outputdir = "RESTORED_FILES/";
+
+void restore_inode(int inodenr, InodePointer real_inode, std::string const& outfile);
+
+#endif // RESTORE_H

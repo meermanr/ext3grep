@@ -9,10 +9,76 @@ DEFS = @DEFS@
 CXXFLAGS =
 
 ext3grep_SOURCES = \
+	accept.cc \
+	blocknr_vector_type.cc \
+	commandline.cc \
+	directories.cc \
+	dir_inode_to_block.cc \
+	dump_hex_to.cc \
+	dump_names.cc \
+	init_journal_consts.cc \
+	get_block.cc \
+	globals.cc \
+	histogram.cc \
+	indirect_blocks.cc \
+	init_consts.cc \
+	init_directories.cc \
+	init_files.cc \
+	inode.cc \
+	inode_refers_to.cc \
+	is_blockdetection.cc \
+	journal.cc \
+	last_undeleted_directory_inode_refering_to_block.cc \
+	load_meta_data.cc \
+	ostream_operators.cc \
+	Parent.cc \
+	print_directory.cc \
+	print_directory_inode.cc \
+	print_dir_entry_long_action.cc \
+	printing.cc \
+	print_inode_to.cc \
+	print_symlink.cc \
+	restore.h \
+	restore.cc \
+	show_hardlinks.cc \
+	show_journal_inodes.cc \
+	utils.cc \
 	ext3grep.cc \
-	locate.h \
 	locate.cc \
+	locate.h \
 	ext3.h \
+	Parent.h \
+	forward_declarations.h \
+	histogram.h \
+	indirect_blocks.h \
+	init_directories.h \
+	utils.h \
+	dir_inode_to_block.h \
+	is_filename_char.h \
+	superblock.h \
+	directories.h \
+	is_blockdetection.h \
+	conversion.h \
+	commandline.h \
+	inode.h \
+	ostream_operators.h \
+	print_inode_to.h \
+	bitmap.h \
+	load_meta_data.h \
+	FileMode.h \
+	accept.h \
+	endian_conversion.h \
+	inode_refers_to.h \
+	journal.h \
+	init_files.h \
+	init_journal_consts.h \
+	print_dir_entry_long_action.h \
+	get_block.h \
+	init_consts.h \
+	print_symlink.h \
+	blocknr_vector_type.h \
+	restore.h \
+	globals.h \
 	kernel-jbd.h \
 	jfs_compat.h
 
@@ -21,12 +87,13 @@ ext3grep_LDADD = @LIBS@ @CWD_LIBS@
 ext3grep_LDFLAGS =
 
 if USE_DEBUG
-ext3grep_SOURCES += backtrace.cc backtrace.h
+ext3grep_SOURCES += backtrace.cc backtrace.h debug.cc debug.h
 ext3grep_LDFLAGS += -rdynamic
-endif
-
+ext3grep_SOURCES += 
+else
 if USE_CWDEBUG
 ext3grep_SOURCES += debug.cc debug.h
+endif
 endif
 
 if USE_PCH

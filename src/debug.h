@@ -58,17 +58,7 @@
 
 #endif // !DOXYGEN
 
-#include <cassert>
-#ifdef DEBUG
-#define ASSERT(x) assert(x)
-#else
-#define ASSERT(x)
-#endif
-
 #else // CWDEBUG
-
-//! Assert \a x, if debugging is turned on.
-#define ASSERT(x) LIBCWD_ASSERT(x)
 
 #ifndef DEBUGCHANNELS
 //! @brief The namespace in which the \c dc namespace is declared.
@@ -170,5 +160,33 @@ struct Indent {
   debug::Indent __ext3grep_debug_indent(__ext3grep_debug_indentation);
 
 #endif // CWDEBUG
+
+#undef ASSERT
+#ifdef DEBUG
+#include "backtrace.h"
+
+extern void assert_fail(char const* expr, char const* file, int line, char const* function);
+
+#define STRING(x) #x
+#define ASSERT(expr) \
+        (static_cast<void>((expr) ? 0 \
+                                  : (assert_fail(STRING(expr), __FILE__, __LINE__, __PRETTY_FUNCTION__), 0)))
+#else // !DEBUG
+#include <cassert>
+#define ASSERT(expr) assert(expr)
+#endif // !DEBUG
+
+#ifndef EXTERNAL_BLOCK
+#define EXTERNAL_BLOCK 0
+#endif
+
+#if EXTERNAL_BLOCK
+#define SOMEONES_BLOCK_SIZE 4096
+#else
+#define SOMEONES_BLOCK_SIZE 1
+#endif
+
+extern uint32_t someones_inode_count;
+extern unsigned char someones_block[SOMEONES_BLOCK_SIZE];
 
 #endif // DEBUG_H

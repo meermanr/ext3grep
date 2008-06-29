@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file show_journal_inodes.cc Implementation of the function show_journal_inodes.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,30 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef USE_PCH
+#include "sys.h"
+#include <vector>
+#include <iostream>
+#include "ext3.h"
+#endif
 
-#include <string>
-#include <set>
+#include "journal.h"
+#include "print_inode_to.h"
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
-
-#endif // LOCATE_H
+void show_journal_inodes(int inodenr)
+{
+  std::vector<std::pair<int, Inode> > inodes;
+  get_inodes_from_journal(inodenr, inodes);
+  std::cout << "Copies of inode " << inodenr << " found in the journal:\n";
+  uint32_t last_mtime = std::numeric_limits<uint32_t>::max();
+  for (std::vector<std::pair<int, Inode> >::iterator iter = inodes.begin(); iter != inodes.end(); ++iter)
+  {
+    Inode const& inode(iter->second);
+    if (inode.mtime() != last_mtime)
+    {
+      last_mtime = inode.mtime();
+      std::cout << "\n--------------Inode " << inodenr << "-----------------------\n";
+      print_inode_to(std::cout, inode);
+    }
+  }
+}

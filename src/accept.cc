@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file accept.cc Implementation of things related to --accept.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,47 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef USE_PCH
+#include "sys.h"
+#include "ext3.h"
+#include "debug.h"
+#endif
 
-#include <string>
-#include <set>
+#include "is_filename_char.h"
+#include "accept.h"
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+//-----------------------------------------------------------------------------
+//
+// Accepted filenames and unlikely characters.
+//
 
-#endif // LOCATE_H
+std::bitset<256> Accept::S_illegal;
+std::bitset<256> Accept::S_unlikely;
+
+// Set with all Accept objects.
+std::set<Accept> accepted_filenames;
+
+// Global initialization.
+void init_accept(void)
+{
+  Accept::S_illegal.reset();
+  Accept::S_unlikely.reset();
+
+  for (int i = 0; i < 256; ++i)
+  {
+    __s8 c = i;
+    filename_char_type res = is_filename_char(c);
+    switch(res)
+    {
+      case fnct_ok:
+        break;
+      case fnct_illegal:
+        Accept::S_illegal.set(i);
+        break;
+      case fnct_unlikely:
+      case fnct_non_ascii:
+        Accept::S_unlikely.set(i);
+        break;
+    }
+  }
+}

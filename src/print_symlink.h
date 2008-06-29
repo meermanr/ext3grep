@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file print_symlink.h Declaration of function print_symlink.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef PRINT_SYMLINK_H
+#define PRINT_SYMLINK_H
 
-#include <string>
-#include <set>
+#ifndef USE_PCH
+#include <iosfwd>
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+#include "inode.h"
 
-#endif // LOCATE_H
+int print_symlink(std::ostream& os, Inode const& inode);
+
+// Same for an InodePointer.
+inline int print_symlink(std::ostream& os, InodePointer const& inoderef)
+{
+  // We can dereference inoderef here because it is known that print_symlink does not keep a pointer or reference to the inode.
+  return print_symlink(os, *inoderef);
+}
+
+#endif // PRINT_SYMLINK_H

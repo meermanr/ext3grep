@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file print_dir_entry_long_action.h Declaration of function print_dir_entry_long_action.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef PRINT_DIR_ENTRY_LONG_ACTION_H
+#define PRINT_DIR_ENTRY_LONG_ACTION_H
 
-#include <string>
-#include <set>
+#ifndef USE_PCH
+#include "ext3.h"
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+struct Parent;
 
-#endif // LOCATE_H
+bool print_dir_entry_long_action(ext3_dir_entry_2 const& dir_entry, Inode const& inode,
+    bool UNUSED(deleted), bool UNUSED(allocated), bool reallocated, bool zero_inode, bool linked, bool filtered, Parent*, void*);
+
+#endif // PRINT_DIR_ENTRY_LONG_ACTION_H

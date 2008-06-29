@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file inode_refers_to.h Declaration of function inode_refers_to.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef INODE_REFERS_TO_H
+#define INODE_REFERS_TO_H
 
-#include <string>
-#include <set>
+#ifndef USE_PCH
+#include "ext3.h"
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+bool inode_refers_to(Inode const& inode, int block_number);
 
-#endif // LOCATE_H
+#endif // INODE_REFERS_TO_H

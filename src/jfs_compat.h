@@ -1,3 +1,6 @@
+#ifndef JFS_COMPAT_H
+#define JFS_COMPAT_H
+
 struct __whatever_s {
   int j_max_transaction_buffers;
   __whatever_s* j_committing_transaction;
@@ -6,3 +9,5 @@ struct __whatever_s {
 typedef unsigned gfp_t;
 typedef unsigned int         tid_t;
 typedef struct __whatever_s  journal_t;
+
+#endif // JFS_COMPAT_H

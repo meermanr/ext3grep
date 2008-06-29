@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file utils.h Declarations for utils.cc.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef UTILS_H
+#define UTILS_H
 
-#include <string>
-#include <set>
+#ifndef USE_PCH
+#include <stdint.h>
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+char const* dir_entry_file_type(int file_type, bool ls);
+mode_t inode_mode_to_mkdir_mode(uint16_t mode);
+char const* mode_str(int16_t i_mode);
 
-#endif // LOCATE_H
+#endif // UTILS_H

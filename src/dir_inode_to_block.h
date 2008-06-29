@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file dir_inode_to_block.h Declarations for dir_inode_to_block.cc
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef DIR_INIDE_TO_BLOCK_H
+#define DIR_INIDE_TO_BLOCK_H
 
+#ifndef USE_PCH
 #include <string>
-#include <set>
+#include <vector>
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+#include "blocknr_vector_type.h"
 
-#endif // LOCATE_H
+bool does_not_end_on_END(std::string const& cachename);
+void init_dir_inode_to_block_cache(void);
+int dir_inode_to_block(uint32_t inode);
+extern blocknr_vector_type* dir_inode_to_block_cache;
+extern std::vector<int> extended_blocks;
+
+#endif // DIR_INIDE_TO_BLOCK_H

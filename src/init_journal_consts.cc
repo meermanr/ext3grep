@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file init_journal_consts.cc Definition of function init_journal_consts.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef USE_PCH
+#include "sys.h"
+#include "debug.h"
+#endif
 
-#include <string>
-#include <set>
+#include "globals.h"
+#include "endian_conversion.h"
+#include "inode.h"
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
-
-#endif // LOCATE_H
+void init_journal_consts(void)
+{
+  // Initialize journal constants.
+  journal_block_size_ = be2le(journal_super_block.s_blocksize);
+  ASSERT(journal_block_size_ == block_size_);	// Sorry, I'm trying to recover my own data-- have no time to deal with this.
+  journal_maxlen_ = be2le(journal_super_block.s_maxlen);
+  journal_first_ = be2le(journal_super_block.s_first);
+  journal_sequence_ = be2le(journal_super_block.s_sequence);
+  journal_start_ = be2le(journal_super_block.s_start);
+  journal_inode = *get_inode(super_block.s_journal_inum);
+}

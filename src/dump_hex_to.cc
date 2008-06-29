@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file dump_hex_to.cc Implementation of the dump_hex_to function.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,36 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef USE_PCH
+#include "sys.h"
+#include <iostream>
+#include <iomanip>
+#endif
 
-#include <string>
-#include <set>
+//-----------------------------------------------------------------------------
+//
+// dump_hex_to
+//
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
-
-#endif // LOCATE_H
+void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size)
+{
+  for (size_t addr = 0; addr < size; addr += 16)
+  {
+    os << std::hex << std::setfill('0') << std::setw(4) << addr << " |";
+    int offset;
+    for (offset = 0; offset < 16 && addr + offset < size; ++offset)
+      os << ' ' << std::hex << std::setfill('0') << std::setw(2) << (int)buf[addr + offset];
+    for (; offset < 16; ++offset)
+      os << "   ";
+    os << " | ";
+    for (int offset = 0; offset < 16 && addr + offset < size; ++offset)
+    {
+      unsigned char c = buf[addr + offset];
+      if (!std::isprint(c))
+	c = '.';
+      os << c;
+    }
+    os << '\n';
+  }
+  os << std::dec;
+}

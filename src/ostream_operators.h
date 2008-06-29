@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file ostream_operators.h Declaration of various ostream inserter functions.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef OSTREAM_OPERATORS_H
+#define OSTREAM_OPERATORS_H
 
-#include <string>
-#include <set>
+#ifndef USE_PCH
+#include <iosfwd>		// Needed for std::ostream
+#include "ext3.h"		// Needed for all other types.
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+// Print superblock contents.
+std::ostream& operator<<(std::ostream& os, ext3_super_block const& super_block);
+std::ostream& operator<<(std::ostream& os, journal_superblock_t const& journal_super_block);
 
-#endif // LOCATE_H
+// Print group descriptor.
+std::ostream& operator<<(std::ostream& os, ext3_group_desc const& group_desc);
+
+// Print journal header.
+std::ostream& operator<<(std::ostream& os, journal_header_t const& journal_header);
+std::ostream& operator<<(std::ostream& os, journal_block_tag_t const& journal_block_tag);
+std::ostream& operator<<(std::ostream& os, journal_revoke_header_t const& journal_revoke_header);
+
+#endif // OSTREAM_OPERATORS_H

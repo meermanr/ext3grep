@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file init_consts.h Declaration of function init_consts.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef INIT_CONSTS_H
+#define INIT_CONSTS_H
 
-#include <string>
-#include <set>
+// The (first) super block starts here.
+int const SUPER_BLOCK_OFFSET = 1024;
+void init_consts();
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
-
-#endif // LOCATE_H
+#endif // INIT_CONSTS_H

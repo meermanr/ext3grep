@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file dump_names.cc Implementation of --dump_names and --restore-all.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef USE_PCH
+#include "sys.h"
+#include "debug.h"
+#endif
 
-#include <string>
-#include <set>
+#include "forward_declarations.h"
+#include "init_directories.h"
+#include "init_files.h"
+#include "commandline.h"
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+void dump_names(void)
+{
+  DoutEntering(dc::notice, "dump_names()");
 
-#endif // LOCATE_H
+  init_files();
+  std::list<std::string> paths;
+  for (all_directories_type::iterator iter = all_directories.begin(); iter != all_directories.end(); ++iter)
+    paths.push_back(iter->first);
+  for (path_to_inode_map_type::iterator iter = path_to_inode_map.begin(); iter != path_to_inode_map.end(); ++iter)
+    paths.push_back(iter->first);
+  paths.sort();
+  for (std::list<std::string>::iterator iter = paths.begin(); iter != paths.end(); ++iter)
+    if (!iter->empty())
+    {
+      if (commandline_restore_all)
+	restore_file(*iter);
+      else
+	std::cout << *iter << '\n';
+    }
+}

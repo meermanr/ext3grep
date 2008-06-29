@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file init_directories.h Declaration of init_directories and its maps.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef INIT_DIRECTORIES_H
+#define INIT_DIRECTORIES_H
 
+#ifndef USE_PCH
+#include <map>
 #include <string>
-#include <set>
+#include <stdint.h>
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+#include "directories.h"
 
-#endif // LOCATE_H
+typedef std::map<std::string, Directory> all_directories_type;
+extern all_directories_type all_directories;
+typedef std::map<uint32_t, all_directories_type::iterator> inode_to_directory_type;
+extern inode_to_directory_type inode_to_directory;
+void init_directories(void);
+
+#endif

@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file Parent.h Declaration of struct Parent.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,27 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef PARENT_H
+#define PARENT_H
 
-#include <string>
-#include <set>
+#ifndef USE_PCH
+#include "ext3.h"	// Needed for ext3_dir_entry_2
+#include <stdint.h>	// Needed for uint32_t
+#include <string>	// Needed for std::string
+#endif
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
+#include "inode.h"	// Needed for InodePointer
 
-#endif // LOCATE_H
+struct Parent {
+  Parent* M_parent;
+  ext3_dir_entry_2 const* M_dir_entry;
+  InodePointer M_inode;
+  uint32_t M_inodenr;
+
+  Parent(InodePointer const& inode, uint32_t inodenr) : M_parent(NULL), M_dir_entry(NULL), M_inode(inode), M_inodenr(inodenr) { }
+  Parent(Parent* parent, ext3_dir_entry_2 const* dir_entry, InodePointer const& inode, uint32_t inodenr) :
+      M_parent(parent), M_dir_entry(dir_entry), M_inode(inode), M_inodenr(inodenr) { }
+  std::string dirname(bool show_inodes) const;
+};
+
+#endif // PARENT_H

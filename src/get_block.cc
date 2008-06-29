@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file get_block.cc Implementation of the get_block function.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef USE_PCH
+#include "sys.h"
+#include "debug.h"
+#endif
 
-#include <string>
-#include <set>
+#include "globals.h"
+#include "conversion.h"
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
-
-#endif // LOCATE_H
+unsigned char* get_block(int block, unsigned char* block_buf)
+{
+  device.seekg(block_to_offset(block));
+  ASSERT(device.good());
+  device.read((char*)block_buf, block_size_);
+  ASSERT(device.good());
+  return block_buf;
+}

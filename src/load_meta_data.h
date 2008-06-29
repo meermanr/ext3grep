@@ -1,6 +1,6 @@
 // ext3grep -- An ext3 file system investigation and undelete tool
 //
-//! @file locate.h Header for file locate.cc.
+//! @file load_meta_data.h Declaration of function load_meta_data.
 //
 // Copyright (C) 2008, by
 // 
@@ -21,13 +21,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef LOCATE_H
-#define LOCATE_H
+#ifndef LOAD_META_DATA_H
+#define LOAD_META_DATA_H
 
-#include <string>
-#include <set>
+void load_meta_data(int group);
 
-std::string parent_directory(int blocknr, std::set<std::string> const& filenames);
-bool path_exists(std::string const& path);
-
-#endif // LOCATE_H
+#endif // LOAD_META_DATA_H

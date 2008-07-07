@@ -639,6 +639,8 @@ void run_program(void)
     for (uint32_t inode = 1; inode <= inode_count_; ++inode)
     {
       InodePointer ino = get_inode(inode);
+      if (is_symlink(ino))
+        continue;		// Does not refer to any block, and indirect blocks to run over.
       find_block_data_st data;
       data.block_looking_for = commandline_search_inode;
       data.found_block = false;
@@ -647,7 +649,12 @@ void run_program(void)
       iterate_over_all_blocks_of__with__find_block_action();
 #endif
       bool reused_or_corrupted_indirect_block2 = iterate_over_all_blocks_of(ino, find_block_action, &data);
-      ASSERT(!reused_or_corrupted_indirect_block2);
+      if (reused_or_corrupted_indirect_block2)
+      {
+	std::cout << "\nWARNING: while iterating over all blocks of inode " << inode <<
+	    " a reused or corrupt indirect block was encountered; search aborted.\n";
+        std::cout << "Inodes refering to block " << commandline_search_inode << " (cont):" << std::flush;
+      }
       if (data.found_block)
         std::cout << ' ' << inode << std::flush;
     }

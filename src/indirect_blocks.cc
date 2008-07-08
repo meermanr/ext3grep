@@ -8,6 +8,8 @@
 // RSA-1024 0x624ACAD5 1997-01-26                    Sign & Encrypt
 // Fingerprint16 = 32 EC A7 B6 AC DB 65 A6  F6 F6 55 DD 1C DC FF 61
 // 
+// Stanislaw T. Findeisen <sf181257 at students mimuw edu pl>
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 2 of the License, or
@@ -20,6 +22,12 @@
 // 
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+// ChangeLog
+//
+// 2008-07-07  STF
+//     * (is_indirect_block): Add. Heuristic detection of indirect
+//       blocks based solely on their content.
 
 #ifndef USE_PCH
 #include "sys.h"
@@ -196,4 +204,101 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
       return true;
   }
   return false;
+}
+
+/**
+ *  See header file for description.
+ */
+bool is_indirect_block(unsigned char* blockRaw)
+{
+  // Number of 32-bit values per block
+  long const VPB = block_size_ / sizeof(__le32);
+
+  // Block values
+  unsigned long blockVals[1 + VPB];
+  memset(blockVals, 0, sizeof(blockVals));
+
+  // Maximum number of bytes to allocate in an array below.
+  unsigned long const MaxMap = 1024 * 1024 * 32;
+
+  unsigned long vmin  = 0;
+  unsigned long vmax  = 0;
+  bool hasZero = false;
+
+  {
+    long v = __le32_to_cpu(read_le32(blockRaw));
+    blockVals[0] = v;
+
+    if (0 == v)
+      return false;
+
+    vmin = v;
+    vmax = v;
+  }
+
+  // [1] search for zeroes, min and max
+  for (long i = 1, offset = sizeof(__le32); i < VPB; ++i, offset += sizeof(__le32))
+  {
+    unsigned long v = __le32_to_cpu(read_le32(blockRaw + offset));
+    blockVals[i] = v;
+
+    if (v)
+    {
+      if (hasZero)
+      {
+        // There already was 0, now it is not 0 --- this is not an indirect block
+        return false;
+      }
+
+      if (v < vmin)
+        vmin = v;
+      if (vmax < v)
+        vmax = v;
+    }
+    else
+      hasZero = true;
+  }
+
+  // [2] search for duplicate entries
+  if ((vmax - vmin) < MaxMap)
+  {
+    char t[1 + MaxMap];
+    memset(t, 0, sizeof(t));
+
+    for (int i = 0; i < VPB; ++i)
+    {
+      long v = blockVals[i] - vmin;
+
+      if (t[v])
+      {
+        // Value already present!
+        return false;
+      }
+      t[v] = 1;
+    }
+
+    return true;
+  }
+  else
+  {
+    // Block is of the form [b1], [b2], ... [bk] ZEROES, but
+    // [b1] ... [bk] range considerably.
+    //
+    // We will use a collection to check if they are all different.
+    std::set<unsigned long> bvSet;
+
+    for (int i = 0; i < VPB; ++i)
+    {
+      long v = blockVals[i];
+
+      if (bvSet.count(v))
+      {
+        // Value already present!
+        return false;
+      }
+      bvSet.insert(v);
+    }
+
+    return true;
+  }
 }

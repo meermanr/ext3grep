@@ -8,6 +8,8 @@
 // RSA-1024 0x624ACAD5 1997-01-26                    Sign & Encrypt
 // Fingerprint16 = 32 EC A7 B6 AC DB 65 A6  F6 F6 55 DD 1C DC FF 61
 // 
+// Stanislaw T. Findeisen <sf181257 at students mimuw edu pl>
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 2 of the License, or
@@ -20,6 +22,11 @@
 // 
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+// ChangeLog
+//
+// 2008-07-07  STF
+//     * (is_indirect_block): Add.
 
 #ifndef INDIRECT_BLOCKS_H
 #define INDIRECT_BLOCKS_H
@@ -49,5 +56,27 @@ inline bool iterate_over_all_blocks_of(InodePointer inode, void (*action)(int, v
   // inode is dereferenced here in good faith that no reference to it is kept (since there are no structs or classes that do so).
   return iterate_over_all_blocks_of(*inode, action, data, indirect_mask, diagnose);
 }
+
+/**
+ *  Checks if a block is an indirect one.
+ *
+ *  WARNING THIS IS A HEURISTIC FUNCTION! A block can be classified as indirect
+ *  when in fact it is not. That's because analysis is based solely on this single
+ *  block contents.
+ *
+ *  Parameters:
+ *    blockRaw - preloaded block contents (ie, 4096 bytes)
+ *
+ *  Returns true iff given block is of the form:
+ *
+ *    [b1], [b2], ... [bk] ZEROES
+ *
+ *  where:
+ *    - 1 <= k
+ *    - [b1] ... [bk] are 32-bit numbers
+ *    - [b1] ... [bk] are all different
+ *    - [bi] != 0 for all i.
+ */
+bool is_indirect_block(unsigned char* blockRaw);
 
 #endif // INDIRECT_BLOCKS_H

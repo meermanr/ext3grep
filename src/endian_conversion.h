@@ -8,6 +8,8 @@
 // RSA-1024 0x624ACAD5 1997-01-26                    Sign & Encrypt
 // Fingerprint16 = 32 EC A7 B6 AC DB 65 A6  F6 F6 55 DD 1C DC FF 61
 // 
+// Stanislaw T. Findeisen <sf181257 at students mimuw edu pl>
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 2 of the License, or
@@ -20,6 +22,14 @@
 // 
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+// ChangeLog
+//
+// 2008-07-07  STF
+//     * (read_le32): Add. Read 32-bit little endian integers from a
+//       chain of bytes.
+//     * (__le16_to_cpu, __le32_to_cpu): Add. Convert little endian
+//       integers to native integers.
 
 #ifndef ENDIAN_CONVERSION_H
 #define ENDIAN_CONVERSION_H
@@ -48,5 +58,28 @@ inline __u8 be2le(__u8 v) { return v; }
 // they are really still big endian. Calling be2le on those
 // types therefore still needs to do the conversion.
 inline __le32 be2le(__s32 const& v) { return be2le(*reinterpret_cast<__be32 const*>(&v)); }
+
+// ext3grep assumes uint16_t and uint32_t to be little endian (intel cpu).
+inline uint32_t __le32_to_cpu(__le32 x) { return x; }
+inline uint16_t __le16_to_cpu(__le16 x) { return x; }
+
+/**
+ * Reads __le32 from a string.
+ */
+inline __le32 read_le32(unsigned char* s)
+{
+  __le32 v = s[3];
+
+  v <<= 8;
+  v |= s[2];
+
+  v <<= 8;
+  v |= s[1];
+
+  v <<= 8;
+  v |= s[0];
+
+  return v;
+}
 
 #endif // ENDIAN_CONVERSION_H

@@ -440,6 +440,7 @@ void init_journal(void)
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   Inode const* inode = reinterpret_cast<Inode const*>(block_buf);
   // Run over all descriptors, in increasing sequence number.
+  time_t oldtime = 0;
   for (std::vector<Descriptor*>::iterator iter = all_descriptors.begin(); iter != all_descriptors.end(); ++iter)
   {
     // Skip non-tags.
@@ -461,8 +462,21 @@ void init_journal(void)
       int inode_number = block_to_inode(block_nr);
       // Run over all inodes in the journal block.
       get_block(tag->Descriptor::block(), block_buf);
+      __le32 lasttime = 0;
       for (unsigned int i = 0; i < block_size_ / sizeof(Inode); i += inode_size_ / sizeof(Inode), ++inode_number)
       {
+        // REMOVE THIS:
+	// print the inode number:
+	//std::cout << "INODE IN JOURNAL: " << inode_number << std::endl;
+	if (inode[i].atime() > lasttime || lasttime == 0)
+	  lasttime = inode[i].atime(); 
+	if (inode[i].ctime() > lasttime)
+	  lasttime = inode[i].ctime();
+	if (inode[i].mtime() > lasttime)
+	  lasttime = inode[i].mtime();
+	if (inode[i].dtime() > lasttime)
+	  lasttime = inode[i].dtime();
+
         // Skip non-directories.
 	if (!is_directory(inode[i]))
 	  continue;
@@ -481,9 +495,12 @@ void init_journal(void)
 	      " which is a directory, but this directory has reused or corrupted (double/triple) indirect blocks.\n";
 	}
       }
+      if (lasttime != 0 && (__le32_to_cpu(lasttime) < oldtime || oldtime == 0))
+	oldtime = __le32_to_cpu(lasttime);
     }
   }
   std::cout << " done\n";
+  std::cout << "The oldest inode block that is still in the journal, appears to be from " << oldtime << " = " << std::ctime(&oldtime);
   if (wrapped_journal_sequence)
   {
     static bool printed = false;

@@ -69,6 +69,7 @@ bool commandline_restore_all = false;
 bool commandline_show_hardlinks = false;
 bool commandline_debug = false;
 bool commandline_debug_malloc = false;
+bool commandline_custom = false;
 
 //-----------------------------------------------------------------------------
 //
@@ -211,7 +212,8 @@ enum opts {
   opt_show_hardlinks,
   opt_help,
   opt_debug,
-  opt_debug_malloc
+  opt_debug_malloc,
+  opt_custom
 };
 
 void decode_commandline_options(int& argc, char**& argv)
@@ -256,6 +258,7 @@ void decode_commandline_options(int& argc, char**& argv)
     {"show-hardlinks", 0, &long_option, opt_show_hardlinks},
     {"debug", 0, &long_option, opt_debug},
     {"debug-malloc", 0, &long_option, opt_debug_malloc},
+    {"custom", 0, &long_option, opt_custom},
     {NULL, 0, NULL, 0}
   };
 
@@ -281,6 +284,9 @@ void decode_commandline_options(int& argc, char**& argv)
 	    break;
 	  case opt_debug_malloc:
 	    commandline_debug_malloc = true;
+	    break;
+	  case opt_custom:
+	    commandline_custom = true;
 	    break;
 	  case opt_superblock:
 	    commandline_superblock = true;

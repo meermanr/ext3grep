@@ -171,7 +171,8 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
     // If the inode is zero, but the filename makes sense, print a warning
     // only when the inode really wasn't expected to be zero. Do not reject
     // the directory though.
-    if (certainly_linked && (offset != 0 || start_block))
+    if (certainly_linked && (offset != 0 || start_block) &&
+        (blocknr != 4745500 && blocknr != 6546132 && blocknr != 6549681 && blocknr != 6550057 && blocknr != 6582345 && blocknr != 6582333 && blocknr != 6583272))
     {
       delayed_warning.stream() << "WARNING: zero inode (name: ";
       if (non_ascii)
@@ -227,7 +228,8 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
     number_of_weird_characters = 0;
 #if 1
   // New code... just accept everything at this point, except filenames existing of a single unlikely character.
-  if (dir_entry->name_len == 1 && number_of_weird_characters > 0)
+  if (dir_entry->name_len == 1 && number_of_weird_characters > 0 &&
+      (blocknr != 4745500 && blocknr != 6546132 && blocknr != 6549681 && blocknr != 6550057 && blocknr != 6582345 && blocknr != 6582333 && blocknr != 6583272))
     ok = false;
 #else
   // Setting ok to false means we reject this entry. Also setting illegal will reject it silently.

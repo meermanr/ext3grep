@@ -75,6 +75,8 @@
 extern char const* svn_revision;
 #endif
 
+extern void custom(void);
+
 void run_program(void)
 {
   Debug(if (!commandline_debug) dc::notice.off());
@@ -124,6 +126,11 @@ void run_program(void)
     std::cout << std::flush;
     std::cerr << progname << ": --journal: The journal is on an external device. Please add support for it." << std::endl;
     exit(EXIT_FAILURE);
+  }
+  if (commandline_custom)
+  {
+    custom();
+    exit(EXIT_SUCCESS);
   }
   if (commandline_inode != -1)
   {

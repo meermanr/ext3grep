@@ -9,6 +9,7 @@ DEFS = @DEFS@
 CXXFLAGS =
 
 ext3grep_SOURCES = \
+	custom.cc \
 	accept.cc \
 	blocknr_vector_type.cc \
 	commandline.cc \

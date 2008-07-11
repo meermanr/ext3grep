@@ -28,6 +28,17 @@
 // 2008-07-07  STF
 //     * (is_indirect_block): Add. Heuristic detection of indirect
 //       blocks based solely on their content.
+//
+// 2008-07-10  Carlo Wood  <carlo@alinoe.com>
+//     * (is_indirect_block):
+//       -Add SKIPZEROES.
+//       - Call is_data_block_number.
+//       - Return false if there are only ZEROES.
+//       - Bug fix: Abort loops when reaching the ZEROES.
+//       - Only use an array on the stack if the block numbers are less than the
+//         size of one group apart (instead of allocating and clearing 32 MB on
+//         the stack every time).
+//	- Use return value of std::set<>::insert intead of calling std::set<>::count.
 
 #ifndef USE_PCH
 #include "sys.h"

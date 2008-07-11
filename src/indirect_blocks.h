@@ -69,12 +69,12 @@ inline bool iterate_over_all_blocks_of(InodePointer inode, void (*action)(int, v
  *
  *  Returns true iff given block is of the form:
  *
- *    [b1], [b2], ... [bk] ZEROES
+ *    [b1], [b2], ... [bi], ... [bk] ZEROES
  *
- *  where:
- *    - i <= k
- *    - [b1] ... [bk] are valid block numbers (is_data_block_number() returns true).
- *    - [b1] ... [bk] are all different.
+ *  where 
+ *    - 1 <= i <= k
+ *    - [bi] are valid block numbers (is_data_block_number() returns true).
+ *    - [bi] are all different.
  *    - [bi] != 0 for all i.
  */
 bool is_indirect_block(unsigned char* block_ptr);

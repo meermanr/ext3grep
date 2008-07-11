@@ -207,9 +207,10 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
   return false;
 }
 
-/**
- *  See header file for description.
- */
+// See header file for description.
+// Define this to return false if any [bi] is zero, otherwise
+// only false is returned when the first block is zero.
+#define SKIPZEROES 1
 bool is_indirect_block(unsigned char* block_ptr)
 {
   // Number of 32-bit values per block.
@@ -230,16 +231,23 @@ bool is_indirect_block(unsigned char* block_ptr)
 
     if (v)
     {
+#if SKIPZEROES
       if (hasZero)
       {
         // There already was 0, now it is not 0 --- this is not an indirect block
         return false;
       }
+#endif
       if (!is_data_block_number(v))
       {
         // This is not a valid block pointer.
         return false;
       }
+
+#if !SKIPZEROES
+      if (hasZero)
+        continue;
+#endif
 
       if (v < vmin)
         vmin = v;
@@ -256,7 +264,7 @@ bool is_indirect_block(unsigned char* block_ptr)
   // Maximum number of bytes to allocate in an array.
   uint32_t const max_array_size = blocks_per_group(super_block);
 
-  // [2] search for duplicate entries
+  // [2] Search for duplicate entries.
   if (vmax - vmin < max_array_size)
   {
     char t[max_array_size];

@@ -42,8 +42,6 @@ AC_PROG_CXX
 AC_PROG_CXXCPP
 
 dnl Make these two the default until ext3grep is stable.
-enable_optimize=no
-enable_debug=yes
 dnl Add --enable-debug (DEBUG, DOXYGEN_DEBUG), --enable-libcwd (CWDEBUG, DOXYGEN_CWDEBUG),
 dnl --enable-optimise and --enable-profile options. Update USE_LIBCWD, CWD_LIBS and CXXFLAGS accordingly.
 CW_OPG_FLAGS([-W -Wall -Woverloaded-virtual -Wundef -Wpointer-arith -Wwrite-strings -Winline])

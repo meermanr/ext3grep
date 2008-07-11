@@ -45,7 +45,7 @@ void inode_refers_to_action(int blocknr, void* ptr)
 void iterate_over_all_blocks_of__with__inode_refers_to_action(void) { inode_refers_to_action(0, NULL); }
 #endif
 
-bool inode_refers_to(Inode const& inode, int block_number)
+bool inode_refers_to(Inode const& inode, int inode_number, int block_number)
 {
   inode_refers_to_st data;
   data.block_number = block_number;
@@ -54,11 +54,11 @@ bool inode_refers_to(Inode const& inode, int block_number)
   // Tell cppgraph that we call inode_refers_to_action from here.
   iterate_over_all_blocks_of__with__inode_refers_to_action();
 #endif
-  bool reused_or_corrupted_indirect_block9 = iterate_over_all_blocks_of(inode, inode_refers_to_action, &data);
+  bool reused_or_corrupted_indirect_block9 = iterate_over_all_blocks_of(inode, inode_number, inode_refers_to_action, &data);
   if (data.found)
     return true;
   if (reused_or_corrupted_indirect_block9)
-    std::cout << "WARNING: Could not verify if inode refers to block " << block_number <<
+    std::cout << "WARNING: Could not verify if inode " << inode_number << " refers to block " << block_number <<
         " : encountered a reused or corrupted (double/triple) indirect block!\n";
   return false;
 }

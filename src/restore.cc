@@ -208,14 +208,14 @@ void restore_inode(int inodenr, InodePointer real_inode, std::string const& outf
       // Tell cppgraph that we call restore_file_action from here.
       iterate_over_all_blocks_of__with__restore_file_action();
 #endif
-      bool reused_or_corrupted_indirect_block8 = iterate_over_all_blocks_of(inode, restore_file_action, &data);
+      bool reused_or_corrupted_indirect_block8 = iterate_over_all_blocks_of(inode, inodenr, restore_file_action, &data);
       ASSERT(out.good());
       out.close();
       if (reused_or_corrupted_indirect_block8)
       {
         std::cout << "WARNING: Failed to restore " << outfile << ": encountered a reused or corrupted (double/triple) indirect block!\n";
 	std::cout << "Running iterate_over_all_blocks_of again with diagnostic messages ON:\n";
-	iterate_over_all_blocks_of(inode, restore_file_action, &data, direct_bit, true);
+	iterate_over_all_blocks_of(inode, inodenr, restore_file_action, &data, direct_bit, true);
 	// FIXME: file should be renamed.
       }
       if (chmod(outputdir_outfile.c_str(), inode_mode_to_mkdir_mode(inode.mode())) == -1)

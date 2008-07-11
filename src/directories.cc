@@ -145,7 +145,7 @@ static void filter_dir_entry(ext3_dir_entry_2 const& dir_entry,
       if (!deleted && allocated && !reallocated)	// Existing directory?
       {
         InodePointer inoderef(get_inode(dir_entry.inode));
-	bool reused_or_corrupted_indirect_block3 = iterate_over_all_blocks_of(inoderef, iterate_over_existing_directory_action, &idata);
+	bool reused_or_corrupted_indirect_block3 = iterate_over_all_blocks_of(inoderef, dir_entry.inode, iterate_over_existing_directory_action, &idata);
 	ASSERT(!reused_or_corrupted_indirect_block3);
       }
       else

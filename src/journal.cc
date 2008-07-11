@@ -374,7 +374,8 @@ void init_journal(void)
   // Tell cppgraph that we call find_blocknr_range_action from here.
   iterate_over_all_blocks_of__with__find_blocknr_range_action();
 #endif
-  bool reused_or_corrupted_indirect_block4 = iterate_over_all_blocks_of(journal_inode, find_blocknr_range_action, NULL, indirect_bit | direct_bit);
+  bool reused_or_corrupted_indirect_block4 =
+      iterate_over_all_blocks_of(journal_inode, super_block.s_journal_inum, find_blocknr_range_action, NULL, indirect_bit | direct_bit);
   ASSERT(!reused_or_corrupted_indirect_block4);
   ASSERT(smallest_block_nr < largest_block_nr);		// A non-external journal must have a size.
   min_journal_block = smallest_block_nr;
@@ -388,7 +389,8 @@ void init_journal(void)
   // Tell cppgraph that we call indirect_journal_block_action from here.
   iterate_over_all_blocks_of__with__indirect_journal_block_action();
 #endif
-  bool reused_or_corrupted_indirect_block5 = iterate_over_all_blocks_of(journal_inode, indirect_journal_block_action, NULL, indirect_bit);
+  bool reused_or_corrupted_indirect_block5 =
+      iterate_over_all_blocks_of(journal_inode, super_block.s_journal_inum, indirect_journal_block_action, NULL, indirect_bit);
   ASSERT(!reused_or_corrupted_indirect_block5);
   journal_block_bitmap = new bitmap_t [size];
   memset(journal_block_bitmap, 0, size * sizeof(bitmap_t));
@@ -396,7 +398,8 @@ void init_journal(void)
   // Tell cppgraph that we call fill_journal_bitmap_action from here.
   iterate_over_all_blocks_of__with__fill_journal_bitmap_action();
 #endif
-  bool reused_or_corrupted_indirect_block6 = iterate_over_all_blocks_of(journal_inode, fill_journal_bitmap_action, NULL, indirect_bit | direct_bit);
+  bool reused_or_corrupted_indirect_block6 =
+      iterate_over_all_blocks_of(journal_inode, super_block.s_journal_inum, fill_journal_bitmap_action, NULL, indirect_bit | direct_bit);
   ASSERT(!reused_or_corrupted_indirect_block6);
   // Initialize the Descriptors.
   std::cout << "Loading journal descriptors..." << std::flush;
@@ -488,14 +491,17 @@ void init_journal(void)
         iterate_over_all_blocks_of__with__directory_inode_action();
 #endif
 	// Run over all blocks of the directory inode.
-	bool reused_or_corrupted_indirect_block7 = iterate_over_all_blocks_of(inode[i], directory_inode_action, &inode_number);
+	bool reused_or_corrupted_indirect_block7 = iterate_over_all_blocks_of(inode[i], inode_number, directory_inode_action, &inode_number);
 	if (reused_or_corrupted_indirect_block7)
 	{
 	  std::cout << "Note: Block " << tag->Descriptor::block() << " in the journal contains a copy of inode " << inode_number <<
 	      " which is a directory, but this directory has reused or corrupted (double/triple) indirect blocks.\n";
 	}
       }
-      if (lasttime != 0 && (__le32_to_cpu(lasttime) < oldtime || oldtime == 0))
+      // Normally a lasttime != 0 should do. But I ran into a case where the supposedly inode block
+      // didn't contain inodes at all, but block numbers?! Therefore, check that lasttime > inode_count_,
+      // which will be the case in 99.999% of the cases for a real time_t.
+      if (lasttime > inode_count_ && (__le32_to_cpu(lasttime) < oldtime || oldtime == 0))
 	oldtime = __le32_to_cpu(lasttime);
     }
   }

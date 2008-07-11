@@ -39,7 +39,7 @@ int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int 
   if (is_allocated(inode_number))
   {
     InodePointer real_inode = get_inode(inode_number);
-    if (is_directory(*real_inode) && inode_refers_to(*real_inode, directory_block_number))
+    if (is_directory(*real_inode) && inode_refers_to(*real_inode, inode_number, directory_block_number))
       return std::numeric_limits<int>::max();
   }
   // Get sequence/Inode pairs from the Journal.
@@ -47,7 +47,7 @@ int last_undeleted_directory_inode_refering_to_block(uint32_t inode_number, int 
   get_inodes_from_journal(inode_number, inodes);
   // This runs from high to low sequence numbers, so we'll find the highest matching sequence number.
   for (std::vector<std::pair<int, Inode> >::iterator iter = inodes.begin(); iter != inodes.end(); ++iter)
-    if (is_directory(iter->second) && inode_refers_to(iter->second, directory_block_number))
+    if (is_directory(iter->second) && inode_refers_to(iter->second, inode_number, directory_block_number))
       return iter->first;
   // Nothing found.
   return 0;

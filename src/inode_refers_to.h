@@ -28,6 +28,6 @@
 #include "ext3.h"
 #endif
 
-bool inode_refers_to(Inode const& inode, int block_number);
+bool inode_refers_to(Inode const& inode, int inode_number, int block_number);
 
 #endif // INODE_REFERS_TO_H

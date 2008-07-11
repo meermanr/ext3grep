@@ -412,7 +412,7 @@ void run_program(void)
             iterate_over_all_blocks_of__with__print_directory_action();
 #endif
 	    // Run over all blocks.
-	    bool reused_or_corrupted_indirect_block1 = iterate_over_all_blocks_of(inode, print_directory_action);
+	    bool reused_or_corrupted_indirect_block1 = iterate_over_all_blocks_of(inode, dir_entry->inode, print_directory_action);
 	    if (reused_or_corrupted_indirect_block1)
 	    {
 	      std::cout << "Note: Block " << commandline_block << " is a directory start, it's \".\" entry has inode " << dir_entry->inode <<
@@ -648,7 +648,7 @@ void run_program(void)
       // Tell cppgraph that we call find_block_action from here.
       iterate_over_all_blocks_of__with__find_block_action();
 #endif
-      bool reused_or_corrupted_indirect_block2 = iterate_over_all_blocks_of(ino, find_block_action, &data);
+      bool reused_or_corrupted_indirect_block2 = iterate_over_all_blocks_of(ino, inode, find_block_action, &data);
       if (reused_or_corrupted_indirect_block2)
       {
 	std::cout << "\nWARNING: while iterating over all blocks of inode " << inode <<

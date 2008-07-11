@@ -42,7 +42,7 @@ unsigned int const direct_bit = 1;		// Call action() for real blocks.
 unsigned int const indirect_bit = 2;		// Call action() for (double/tripple) indirect blocks.
 
 void print_directory_action(int blocknr, void*);
-bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit, bool diagnose = false);
+bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit, bool diagnose = false);
 void find_block_action(int blocknr, void* ptr);
 
 struct find_block_data_st {
@@ -50,11 +50,11 @@ struct find_block_data_st {
   int block_looking_for;
 };
 
-inline bool iterate_over_all_blocks_of(InodePointer inode, void (*action)(int, void*), void* data = NULL,
+inline bool iterate_over_all_blocks_of(InodePointer inode, int inode_number, void (*action)(int, void*), void* data = NULL,
     unsigned int indirect_mask = direct_bit, bool diagnose = false)
 {
   // inode is dereferenced here in good faith that no reference to it is kept (since there are no structs or classes that do so).
-  return iterate_over_all_blocks_of(*inode, action, data, indirect_mask, diagnose);
+  return iterate_over_all_blocks_of(*inode, inode_number, action, data, indirect_mask, diagnose);
 }
 
 /**

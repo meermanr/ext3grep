@@ -161,7 +161,7 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)
 }
 
 // Returns true if an indirect block was encountered that doesn't look like an indirect block anymore.
-bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), void* data, unsigned int indirect_mask, bool diagnose)
+bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*action)(int, void*), void* data, unsigned int indirect_mask, bool diagnose)
 {
   if (is_symlink(inode) && inode.blocks() == 0)
     return false;		// Block pointers contain text.
@@ -181,7 +181,16 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
     std::cout << std::endl;
   if (block_ptr[EXT3_IND_BLOCK])
   {
-    ASSERT(is_block_number(block_ptr[EXT3_IND_BLOCK]));
+    if (!is_block_number(block_ptr[EXT3_IND_BLOCK]))
+    {
+      std::cout << std::flush;
+      std::cerr << "\nWARNING: The indirect block number of inode " << inode_number <<
+          " (or a journal copy thereof) doesn't look like a block number (it is too large, "
+	  "block number " << EXT3_IND_BLOCK << " in it's block list is too large (" <<
+	  block_ptr[EXT3_IND_BLOCK] << ")). Treating this as if one of the indirect blocks "
+	  "were overwritten, although this is a more serious corruption." << std::endl;
+      return true;
+    }
     if ((indirect_mask & indirect_bit) && !diagnose)
       action(block_ptr[EXT3_IND_BLOCK], data);
     if ((indirect_mask & direct_bit))
@@ -190,7 +199,16 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
   }
   if (block_ptr[EXT3_DIND_BLOCK])
   {
-    ASSERT(is_block_number(block_ptr[EXT3_DIND_BLOCK]));
+    if (!is_block_number(block_ptr[EXT3_DIND_BLOCK]))
+    {
+      std::cout << std::flush;
+      std::cerr << "WARNING: The double indirect block number of inode " << inode_number <<
+          " (or a journal copy thereof) doesn't look like a block number (it is too large, "
+	  "block number " << EXT3_DIND_BLOCK << " in it's block list is too large (" <<
+	  block_ptr[EXT3_DIND_BLOCK] << ")). Treating this as if one of the indirect blocks "
+	  "were overwritten, although this is a more serious corruption." << std::endl;
+      return true;
+    }
     if ((indirect_mask & indirect_bit) && !diagnose)
       action(block_ptr[EXT3_DIND_BLOCK], data);
     if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[EXT3_DIND_BLOCK], action, data, indirect_mask, diagnose))
@@ -198,7 +216,16 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
   }
   if (block_ptr[EXT3_TIND_BLOCK])
   {
-    ASSERT(is_block_number(block_ptr[EXT3_TIND_BLOCK]));
+    if (!is_block_number(block_ptr[EXT3_TIND_BLOCK]))
+    {
+      std::cout << std::flush;
+      std::cerr << "WARNING: The tripple indirect block number of inode " << inode_number <<
+          " (or a journal copy thereof) doesn't look like a block number (it is too large, "
+	  "block number " << EXT3_TIND_BLOCK << " in it's block list is too large (" <<
+	  block_ptr[EXT3_TIND_BLOCK] << ")). Treating this as if one of the indirect blocks "
+	  "were overwritten, although this is a more serious corruption." << std::endl;
+      return true;
+    }
     if ((indirect_mask & indirect_bit) && !diagnose)
       action(block_ptr[EXT3_TIND_BLOCK], data);
     if (iterate_over_all_blocks_of_tripple_indirect_block(block_ptr[EXT3_TIND_BLOCK], action, data, indirect_mask, diagnose))

@@ -161,7 +161,7 @@ void restore_inode(int inodenr, InodePointer real_inode, std::string const& outf
   if (is_directory(*real_inode))
   {
     mode_t mode = inode_mode_to_mkdir_mode(real_inode->mode());
-    if (mode & (S_IWUSR|S_IXUSR) != (S_IWUSR|S_IXUSR))
+    if ((mode & (S_IWUSR|S_IXUSR)) != (S_IWUSR|S_IXUSR))
       std::cout << "Note: Restoring directory " << outputdir_outfile << " with mode " <<
           FileMode(real_inode->mode() | 0500) << " although it's original mode is " << FileMode(real_inode->mode()) << ".\n";
     if (mkdir(outputdir_outfile.c_str(), mode|S_IWUSR|S_IXUSR) == -1 && errno != EEXIST)

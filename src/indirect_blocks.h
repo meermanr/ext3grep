@@ -65,18 +65,18 @@ inline bool iterate_over_all_blocks_of(InodePointer inode, void (*action)(int, v
  *  block contents.
  *
  *  Parameters:
- *    blockRaw - preloaded block contents (ie, 4096 bytes)
+ *    block_ptr - preloaded block contents (ie, 4096 bytes)
  *
  *  Returns true iff given block is of the form:
  *
  *    [b1], [b2], ... [bk] ZEROES
  *
  *  where:
- *    - 1 <= k
- *    - [b1] ... [bk] are 32-bit numbers
- *    - [b1] ... [bk] are all different
+ *    - i <= k
+ *    - [b1] ... [bk] are valid block numbers (is_data_block_number() returns true).
+ *    - [b1] ... [bk] are all different.
  *    - [bi] != 0 for all i.
  */
-bool is_indirect_block(unsigned char* blockRaw);
+bool is_indirect_block(unsigned char* block_ptr);
 
 #endif // INDIRECT_BLOCKS_H

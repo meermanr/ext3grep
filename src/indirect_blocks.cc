@@ -38,6 +38,7 @@
 #include "is_blockdetection.h"
 #include "forward_declarations.h"
 #include "endian_conversion.h"
+#include "superblock.h"
 
 //-----------------------------------------------------------------------------
 //
@@ -209,37 +210,22 @@ bool iterate_over_all_blocks_of(Inode const& inode, void (*action)(int, void*), 
 /**
  *  See header file for description.
  */
-bool is_indirect_block(unsigned char* blockRaw)
+bool is_indirect_block(unsigned char* block_ptr)
 {
-  // Number of 32-bit values per block
-  long const VPB = block_size_ / sizeof(__le32);
+  // Number of 32-bit values per block.
+  int const values_per_block = block_size_ / sizeof(__le32);
 
-  // Block values
-  unsigned long blockVals[1 + VPB];
-  memset(blockVals, 0, sizeof(blockVals));
+  // Block values.
+  uint32_t blockVals[values_per_block];
 
-  // Maximum number of bytes to allocate in an array below.
-  unsigned long const MaxMap = 1024 * 1024 * 32;
-
-  unsigned long vmin  = 0;
-  unsigned long vmax  = 0;
+  uint32_t vmin = 0xffffffff;
+  uint32_t vmax = 0;
   bool hasZero = false;
 
+  // Search for zeroes, min and max.
+  for (int i = 0, offset = 0; i < values_per_block; ++i, offset += sizeof(__le32))
   {
-    long v = __le32_to_cpu(read_le32(blockRaw));
-    blockVals[0] = v;
-
-    if (0 == v)
-      return false;
-
-    vmin = v;
-    vmax = v;
-  }
-
-  // [1] search for zeroes, min and max
-  for (long i = 1, offset = sizeof(__le32); i < VPB; ++i, offset += sizeof(__le32))
-  {
-    unsigned long v = __le32_to_cpu(read_le32(blockRaw + offset));
+    uint32_t v = __le32_to_cpu(read_le32(block_ptr + offset));
     blockVals[i] = v;
 
     if (v)
@@ -247,6 +233,11 @@ bool is_indirect_block(unsigned char* blockRaw)
       if (hasZero)
       {
         // There already was 0, now it is not 0 --- this is not an indirect block
+        return false;
+      }
+      if (!is_data_block_number(v))
+      {
+        // This is not a valid block pointer.
         return false;
       }
 
@@ -259,22 +250,29 @@ bool is_indirect_block(unsigned char* blockRaw)
       hasZero = true;
   }
 
+  if (vmax == 0)
+    return false;	// Only zeroes.
+
+  // Maximum number of bytes to allocate in an array.
+  uint32_t const max_array_size = blocks_per_group(super_block);
+
   // [2] search for duplicate entries
-  if ((vmax - vmin) < MaxMap)
+  if (vmax - vmin < max_array_size)
   {
-    char t[1 + MaxMap];
-    memset(t, 0, sizeof(t));
+    char t[max_array_size];
+    std::memset(t, 0, sizeof(t));
 
-    for (int i = 0; i < VPB; ++i)
+    for (int i = 0; i < values_per_block; ++i)
     {
-      long v = blockVals[i] - vmin;
-
-      if (t[v])
+      uint32_t v = blockVals[i];
+      if (!v)
+        break;
+      if (t[v - vmin])
       {
         // Value already present!
         return false;
       }
-      t[v] = 1;
+      t[v - vmin] = 1;
     }
 
     return true;
@@ -282,23 +280,17 @@ bool is_indirect_block(unsigned char* blockRaw)
   else
   {
     // Block is of the form [b1], [b2], ... [bk] ZEROES, but
-    // [b1] ... [bk] range considerably.
-    //
-    // We will use a collection to check if they are all different.
-    std::set<unsigned long> bvSet;
-
-    for (int i = 0; i < VPB; ++i)
+    // [b1] ... [bk] spans more than one group.
+    // Use a set<> to check if they are all different.
+    std::set<uint32_t> bvSet;
+    for (int i = 0; i < values_per_block; ++i)
     {
-      long v = blockVals[i];
-
-      if (bvSet.count(v))
-      {
-        // Value already present!
+      uint32_t v = blockVals[i];
+      if (!v)
+        break;
+      if (!bvSet.insert(v).second)	// Was already inserted?
         return false;
-      }
-      bvSet.insert(v);
     }
-
     return true;
   }
 }

@@ -94,6 +94,11 @@ inline bool is_block_number(uint32_t block_number)
   return block_number < block_count_;
 }
 
+inline bool is_data_block_number(uint32_t block_number)
+{
+  return block_number < block_count_;	// FIXME: not all blocks contain data (ie, skip at least the inode tables).
+}
+
 int block_to_inode(int block);
 bool is_inode(int block);
 bool is_allocated(int inode);

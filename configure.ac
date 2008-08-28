@@ -41,6 +41,9 @@ AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_CXXCPP
 
+dnl Demand little endian system
+AC_C_BIGENDIAN([AC_MSG_ERROR([ext3grep doesn't work on Big Endian systems])])
+
 dnl Make these two the default until ext3grep is stable.
 dnl Add --enable-debug (DEBUG, DOXYGEN_DEBUG), --enable-libcwd (CWDEBUG, DOXYGEN_CWDEBUG),
 dnl --enable-optimise and --enable-profile options. Update USE_LIBCWD, CWD_LIBS and CXXFLAGS accordingly.

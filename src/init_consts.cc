@@ -40,6 +40,11 @@
 
 void init_consts()
 {
+  // Sanity checks.
+  assert(super_block.s_magic == 0xEF53);	// EXT3.
+  assert(super_block.s_creator_os == 0);	// Linux.
+  assert(super_block.s_block_group_nr == 0);	// First super block.
+
   // Frequently used constants.
   groups_ = groups(super_block);
   block_size_ = block_size(super_block);
@@ -52,10 +57,7 @@ void init_consts()
   page_size_ = sysconf(_SC_PAGESIZE);
 #endif
 
-  // Sanity checks.
-  assert(super_block.s_magic == 0xEF53);	// EXT3.
-  assert(super_block.s_creator_os == 0);	// Linux.
-  assert(super_block.s_block_group_nr == 0);	// First super block.
+  // More sanity checks.
   assert((uint32_t)groups_ * inodes_per_group(super_block) == inode_count_);	// All inodes belong to a group.
   // extX does not support block fragments.
   // "File System Forensic Analysis, chapter 14, Overview --> Blocks"

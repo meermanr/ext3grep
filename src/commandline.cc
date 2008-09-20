@@ -63,7 +63,7 @@ int commandline_search_inode = -1;
 hist_type commandline_histogram = hist_none;
 std::string commandline_inode_dirblock_table;
 int commandline_show_journal_inodes = -1;
-std::vector<std::string> commandline_restore_files;
+std::vector<std::string> commandline_restore_file;
 std::string commandline_restore_inode;
 bool commandline_restore_all = false;
 bool commandline_show_hardlinks = false;
@@ -361,7 +361,7 @@ void decode_commandline_options(int& argc, char**& argv)
 	    commandline_restore_inode = optarg;
 	    break;
 	  case opt_restore_file:
-	    commandline_restore_files.push_back(optarg);
+	    commandline_restore_file.push_back(optarg);
 	    break;
 	  case opt_restore_all:
 	    commandline_restore_all = true;
@@ -521,7 +521,7 @@ void decode_commandline_options(int& argc, char**& argv)
        commandline_search_zeroed_inodes ||
        commandline_inode_to_block != -1 ||
        !commandline_restore_inode.empty() ||
-       !commandline_restore_files.empty() ||
+       !commandline_restore_file.empty() ||
        commandline_restore_all ||
        commandline_show_hardlinks);
   if (!commandline_action && !commandline_superblock)

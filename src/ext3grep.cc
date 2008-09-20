@@ -435,7 +435,7 @@ void run_program(void)
     }
   }
   // Make sure the output directory exists.
-  if (!commandline_restore_files.empty() || commandline_restore_all || !commandline_restore_inode.empty())
+  if (!commandline_restore_file.empty() || commandline_restore_all || !commandline_restore_inode.empty())
   {
     struct stat statbuf;
     if (stat(outputdir.c_str(), &statbuf) == -1)
@@ -467,8 +467,8 @@ void run_program(void)
   if (commandline_restore_all || commandline_dump_names)
     dump_names();
   // Handle --restore-file
-  if (!commandline_restore_files.empty())
-    for (std::vector<std::string>::iterator iter = commandline_restore_files.begin(); iter != commandline_restore_files.end(); ++iter)
+  if (!commandline_restore_file.empty())
+    for (std::vector<std::string>::iterator iter = commandline_restore_file.begin(); iter != commandline_restore_file.end(); ++iter)
       restore_file(*iter);
   // Handle --restore-inode
   if (!commandline_restore_inode.empty())

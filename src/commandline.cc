@@ -63,7 +63,7 @@ int commandline_search_inode = -1;
 hist_type commandline_histogram = hist_none;
 std::string commandline_inode_dirblock_table;
 int commandline_show_journal_inodes = -1;
-std::string commandline_restore_file;
+std::vector<std::string> commandline_restore_files;
 std::string commandline_restore_inode;
 bool commandline_restore_all = false;
 bool commandline_show_hardlinks = false;
@@ -151,11 +151,12 @@ static void print_usage(std::ostream& os)
   os << "                         Restore the file(s) with known inode number 'ino'.\n";
   os << "                         The restored files are created in ./" << outputdir << "\n";
   os << "                         with their inode number as extension (ie, inode.12345).\n";
-  os << "  --restore-file 'path'  Will restore file 'path'. 'path' is relative to root\n";
-  os << "                         of the partition and does not start with a '/' (it\n";
+  os << "  --restore-file 'path' [--restore-file 'path' ...]\n"; 
+  os << "                         Will restore file 'path'. 'path' is relative to the\n";
+  os << "                         root of the partition and does not start with a '/' (it\n";
   os << "                         must be one of the paths returned by --dump-names).\n";
   os << "                         The restored directory, file or symbolic link is\n";
-  os << "                         created in the current directory as ./'path'.\n";
+  os << "                         created in the current directory as '"<< outputdir << "path'.\n";
   os << "  --restore-all          As --restore-file but attempts to restore everything.\n";
   os << "                         The use of --after is highly recommended because the\n";
   os << "                         attempt to restore very old files will only result in\n";
@@ -360,7 +361,7 @@ void decode_commandline_options(int& argc, char**& argv)
 	    commandline_restore_inode = optarg;
 	    break;
 	  case opt_restore_file:
-	    commandline_restore_file = optarg;
+	    commandline_restore_files.push_back(optarg);
 	    break;
 	  case opt_restore_all:
 	    commandline_restore_all = true;
@@ -520,7 +521,7 @@ void decode_commandline_options(int& argc, char**& argv)
        commandline_search_zeroed_inodes ||
        commandline_inode_to_block != -1 ||
        !commandline_restore_inode.empty() ||
-       !commandline_restore_file.empty() ||
+       !commandline_restore_files.empty() ||
        commandline_restore_all ||
        commandline_show_hardlinks);
   if (!commandline_action && !commandline_superblock)

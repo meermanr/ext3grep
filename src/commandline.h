@@ -26,6 +26,7 @@
 
 #ifndef USE_PCH
 #include <string>		// Needed for std::string
+#include <vector>		// Needed for std::vector
 #include <time.h>		// Needed for time_t
 #endif
 
@@ -61,7 +62,7 @@ extern int commandline_search_inode;
 extern hist_type commandline_histogram;
 extern std::string commandline_inode_dirblock_table;
 extern int commandline_show_journal_inodes;
-extern std::string commandline_restore_file;
+extern std::vector<std::string> commandline_restore_files;
 extern std::string commandline_restore_inode;
 extern bool commandline_restore_all;
 extern bool commandline_show_hardlinks;

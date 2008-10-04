@@ -230,7 +230,7 @@ void run_program(void)
     if (commandline_print)
     {
       std::cout << "\nHex dump of inode " << commandline_inode << ":\n";
-      dump_hex_to(std::cout, (unsigned char const*)&inode, inode_size_);
+      dump_hex_to(std::cout, (unsigned char const*)&(*inode), inode_size_);
       std::cout << '\n';
     }
     unsigned int bit = commandline_inode - 1 - commandline_group * inodes_per_group_;

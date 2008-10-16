@@ -205,7 +205,7 @@ void iterate_over_directory_action(int blocknr, void* data)
   iterate_over_directory(idata->block_buf, blocknr, idata->action, idata->parent, idata->data);
 }
 
-void iterate_over_existing_directory_action(int blocknr, void* data)
+void iterate_over_existing_directory_action(int blocknr, int, void* data)
 {
   iterate_data_st* idata = reinterpret_cast<iterate_data_st*>(data);
   unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];

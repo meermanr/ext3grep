@@ -34,7 +34,7 @@ struct inode_refers_to_st
   bool found;
 };
 
-void inode_refers_to_action(int blocknr, void* ptr)
+void inode_refers_to_action(int blocknr, int, void* ptr)
 {
   inode_refers_to_st& data(*reinterpret_cast<inode_refers_to_st*>(ptr));
   if (blocknr == data.block_number)
@@ -42,7 +42,7 @@ void inode_refers_to_action(int blocknr, void* ptr)
 }
 
 #ifdef CPPGRAPH
-void iterate_over_all_blocks_of__with__inode_refers_to_action(void) { inode_refers_to_action(0, NULL); }
+void iterate_over_all_blocks_of__with__inode_refers_to_action(void) { inode_refers_to_action(0, 0, NULL); }
 #endif
 
 bool inode_refers_to(Inode const& inode, int inode_number, int block_number)

@@ -314,7 +314,7 @@ static int min_journal_block;
 static int max_journal_block;		// One more than largest block belonging to the journal.
 static bitmap_t* is_indirect_block_in_journal_bitmap = NULL;
 
-void find_blocknr_range_action(int blocknr, void*)
+void find_blocknr_range_action(int blocknr, int, void*)
 {
   if (blocknr > largest_block_nr)
     largest_block_nr = blocknr;
@@ -323,30 +323,30 @@ void find_blocknr_range_action(int blocknr, void*)
 }
 
 #ifdef CPPGRAPH
-void iterate_over_all_blocks_of__with__find_blocknr_range_action(void) { find_blocknr_range_action(0, NULL); }
+void iterate_over_all_blocks_of__with__find_blocknr_range_action(void) { find_blocknr_range_action(0, 0, NULL); }
 #endif
 
-void fill_journal_bitmap_action(int blocknr, void*)
+void fill_journal_bitmap_action(int blocknr, int, void*)
 {
   bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
   journal_block_bitmap[bmp.index] |= bmp.mask;
 }
 
 #ifdef CPPGRAPH
-void iterate_over_all_blocks_of__with__fill_journal_bitmap_action(void) { fill_journal_bitmap_action(0, NULL); }
+void iterate_over_all_blocks_of__with__fill_journal_bitmap_action(void) { fill_journal_bitmap_action(0, 0, NULL); }
 #endif
 
-void indirect_journal_block_action(int blocknr, void*)
+void indirect_journal_block_action(int blocknr, int, void*)
 {
   bitmap_ptr bmp = get_bitmap_mask(blocknr - min_journal_block);
   is_indirect_block_in_journal_bitmap[bmp.index] |= bmp.mask;
 }
 
 #ifdef CPPGRAPH
-void iterate_over_all_blocks_of__with__indirect_journal_block_action(void) { indirect_journal_block_action(0, NULL); }
+void iterate_over_all_blocks_of__with__indirect_journal_block_action(void) { indirect_journal_block_action(0, 0, NULL); }
 #endif
 
-void directory_inode_action(int blocknr, void* data)
+void directory_inode_action(int blocknr, int, void* data)
 {
   int inode_number = *reinterpret_cast<int*>(data);
   block_to_dir_inode_map_type::iterator iter = block_to_dir_inode_map.find(blocknr);
@@ -357,7 +357,7 @@ void directory_inode_action(int blocknr, void* data)
 }
 
 #ifdef CPPGRAPH
-void iterate_over_all_blocks_of__with__directory_inode_action(void) { directory_inode_action(0, NULL); }
+void iterate_over_all_blocks_of__with__directory_inode_action(void) { directory_inode_action(0, 0, NULL); }
 #endif
 
 void init_journal(void)

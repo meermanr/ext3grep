@@ -46,7 +46,7 @@
 #include "print_symlink.h"
 
 #ifdef CPPGRAPH
-void iterate_over_all_blocks_of__with__restore_file_action(void) { restore_file_action(0, NULL); }
+void iterate_over_all_blocks_of__with__restore_file_action(void) { restore_file_action(0, 0, NULL); }
 #endif
 
 enum get_undeleted_inode_type {
@@ -91,7 +91,7 @@ struct Data {
   Data(std::ostream& out_, off_t remaining_size_) : out(out_), remaining_size(remaining_size_) { }
 };
 
-void restore_file_action(int blocknr, void* ptr)
+void restore_file_action(int blocknr, int file_block_nr, void* ptr)
 {
   Data& data(*reinterpret_cast<Data*>(ptr));
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];

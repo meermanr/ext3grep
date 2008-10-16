@@ -38,7 +38,11 @@
 //       - Only use an array on the stack if the block numbers are less than the
 //         size of one group apart (instead of allocating and clearing 32 MB on
 //         the stack every time).
-//	- Use return value of std::set<>::insert intead of calling std::set<>::count.
+//	- Use return value of std::set<>::insert instead of calling std::set<>::count.
+//
+// 2008-10-13  Carlo Wood  <carlo@alinoe.com>
+//     * (is_indirect_block):
+//       - SKIPZEROES must be 0: zeroes a completely legal in any indirect block.
 
 #ifndef USE_PCH
 #include "sys.h"
@@ -56,7 +60,7 @@
 // Indirect blocks
 //
 
-void find_block_action(int blocknr, void* ptr)
+void find_block_action(int blocknr, int, void* ptr)
 {
   find_block_data_st& data(*reinterpret_cast<find_block_data_st*>(ptr));
   if (blocknr == data.block_looking_for)
@@ -64,10 +68,10 @@ void find_block_action(int blocknr, void* ptr)
 }
 
 #ifdef CPPGRAPH
-void iterate_over_all_blocks_of__with__find_block_action(void) { find_block_action(0, NULL); }
+void iterate_over_all_blocks_of__with__find_block_action(void) { find_block_action(0, 0, NULL); }
 #endif
 
-void print_directory_action(int blocknr, void*)
+void print_directory_action(int blocknr, int, void*)
 {
   static bool using_static_buffer = false;
   ASSERT(!using_static_buffer);
@@ -81,10 +85,10 @@ void print_directory_action(int blocknr, void*)
 }
 
 #ifdef CPPGRAPH
-void iterate_over_all_blocks_of__with__print_directory_action(void) { print_directory_action(0, NULL); }
+void iterate_over_all_blocks_of__with__print_directory_action(void) { print_directory_action(0, 0, NULL); }
 #endif
 
-bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int, bool diagnose)
+bool iterate_over_all_blocks_of_indirect_block(int block, int& file_block_nr, void (*action)(int, int, void*), void* data, unsigned int indirect_mask, bool diagnose)
 {
   if (diagnose)
     std::cout << "Processing indirect block " << block << ": " << std::flush;
@@ -93,7 +97,7 @@ bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, vo
   unsigned int i = 0;
   while (i < block_size_ / sizeof(__le32))
   {
-    if (block_ptr[i])
+    if (block_ptr[i] || (indirect_mask & hole_bit))
     {
       if (!is_block_number(block_ptr[i]))
       {
@@ -102,9 +106,10 @@ bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, vo
         break;
       }
       if (!diagnose)
-	action(block_ptr[i], data);
+	action(block_ptr[i], file_block_nr, data);
     }
     ++i;
+    ++file_block_nr;
   }
   bool result = (i < block_size_ / sizeof(__le32));
   if (diagnose && !result)
@@ -112,7 +117,7 @@ bool iterate_over_all_blocks_of_indirect_block(int block, void (*action)(int, vo
   return result;
 }
 
-bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask, bool diagnose)
+bool iterate_over_all_blocks_of_double_indirect_block(int block, int& file_block_nr, void (*action)(int, int, void*), void* data, unsigned int indirect_mask, bool diagnose)
 {
   if (diagnose)
     std::cout << "Start processing double indirect block " << block << '.' << std::endl;
@@ -130,9 +135,9 @@ bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(
         break;
       }
       if ((indirect_mask & indirect_bit) && !diagnose)
-        action(block_ptr[i], data);
+        action(block_ptr[i], -1, data);
       if ((indirect_mask & direct_bit))
-        if (iterate_over_all_blocks_of_indirect_block(block_ptr[i], action, data, indirect_mask, diagnose))
+        if (iterate_over_all_blocks_of_indirect_block(block_ptr[i], file_block_nr, action, data, indirect_mask, diagnose))
 	  break;
     }
     ++i;
@@ -142,7 +147,7 @@ bool iterate_over_all_blocks_of_double_indirect_block(int block, void (*action)(
   return i < block_size_ / sizeof(__le32);
 }
 
-bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)(int, void*), void* data, unsigned int indirect_mask, bool diagnose)
+bool iterate_over_all_blocks_of_tripple_indirect_block(int block, int& file_block_nr, void (*action)(int, int, void*), void* data, unsigned int indirect_mask, bool diagnose)
 {
   if (diagnose)
     std::cout << "Start processing tripple indirect block " << block << '.' << std::endl;
@@ -160,8 +165,8 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)
         break;
       }
       if ((indirect_mask & indirect_bit) && !diagnose)
-        action(block_ptr[i], data);
-      if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[i], action, data, indirect_mask, diagnose))
+        action(block_ptr[i], -1, data);
+      if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[i], file_block_nr, action, data, indirect_mask, diagnose))
         break;
     }
     ++i;
@@ -172,25 +177,29 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, void (*action)
 }
 
 // Returns true if an indirect block was encountered that doesn't look like an indirect block anymore.
-bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*action)(int, void*), void* data, unsigned int indirect_mask, bool diagnose)
+bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*action)(int, int, void*), void* data, unsigned int indirect_mask, bool diagnose)
 {
   if (is_symlink(inode) && inode.blocks() == 0)
     return false;		// Block pointers contain text.
   __le32 const* block_ptr = inode.block();
   if (diagnose)
     std::cout << "Processing direct blocks..." << std::flush;
+  int file_block_nr = 0;
+  int limit = block_size_ >> 2;
   if ((indirect_mask & direct_bit))
-    for (int i = 0; i < EXT3_NDIR_BLOCKS; ++i)
-      if (block_ptr[i])
+    for (int i = 0; i < EXT3_NDIR_BLOCKS; ++i, ++file_block_nr)
+      if (block_ptr[i] || (indirect_mask & hole_bit))
       {
         if (diagnose)
 	  std::cout << ' ' << block_ptr[i] << std::flush;
 	else
-	  action(block_ptr[i], data);
+	  action(block_ptr[i], file_block_nr, data);
       }
+  else
+    file_block_nr += EXT3_NDIR_BLOCKS;
   if (diagnose)
     std::cout << std::endl;
-  if (block_ptr[EXT3_IND_BLOCK])
+  if (block_ptr[EXT3_IND_BLOCK] || (indirect_mask & hole_bit))
   {
     if (!is_block_number(block_ptr[EXT3_IND_BLOCK]))
     {
@@ -203,12 +212,16 @@ bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*act
       return true;
     }
     if ((indirect_mask & indirect_bit) && !diagnose)
-      action(block_ptr[EXT3_IND_BLOCK], data);
+      action(block_ptr[EXT3_IND_BLOCK], -1, data);
     if ((indirect_mask & direct_bit))
-      if (iterate_over_all_blocks_of_indirect_block(block_ptr[EXT3_IND_BLOCK], action, data, indirect_mask, diagnose))
-        return true;
+    {
+      if (iterate_over_all_blocks_of_indirect_block(block_ptr[EXT3_IND_BLOCK], file_block_nr, action, data, indirect_mask, diagnose))
+	return true;
+    }
   }
-  if (block_ptr[EXT3_DIND_BLOCK])
+  else
+    file_block_nr += limit;
+  if (block_ptr[EXT3_DIND_BLOCK] || (indirect_mask & hole_bit))
   {
     if (!is_block_number(block_ptr[EXT3_DIND_BLOCK]))
     {
@@ -221,11 +234,13 @@ bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*act
       return true;
     }
     if ((indirect_mask & indirect_bit) && !diagnose)
-      action(block_ptr[EXT3_DIND_BLOCK], data);
-    if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[EXT3_DIND_BLOCK], action, data, indirect_mask, diagnose))
+      action(block_ptr[EXT3_DIND_BLOCK], -1, data);
+    if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[EXT3_DIND_BLOCK], file_block_nr, action, data, indirect_mask, diagnose))
       return true;
   }
-  if (block_ptr[EXT3_TIND_BLOCK])
+  else
+    file_block_nr += limit * limit;
+  if (block_ptr[EXT3_TIND_BLOCK] || (indirect_mask & hole_bit))
   {
     if (!is_block_number(block_ptr[EXT3_TIND_BLOCK]))
     {
@@ -238,8 +253,8 @@ bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*act
       return true;
     }
     if ((indirect_mask & indirect_bit) && !diagnose)
-      action(block_ptr[EXT3_TIND_BLOCK], data);
-    if (iterate_over_all_blocks_of_tripple_indirect_block(block_ptr[EXT3_TIND_BLOCK], action, data, indirect_mask, diagnose))
+      action(block_ptr[EXT3_TIND_BLOCK], -1, data);
+    if (iterate_over_all_blocks_of_tripple_indirect_block(block_ptr[EXT3_TIND_BLOCK], file_block_nr, action, data, indirect_mask, diagnose))
       return true;
   }
   return false;
@@ -248,7 +263,9 @@ bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*act
 // See header file for description.
 // Define this to return false if any [bi] is zero, otherwise
 // only false is returned when the first block is zero.
-#define SKIPZEROES 1
+
+// This must be 0.
+#define SKIPZEROES 0
 bool is_indirect_block(unsigned char* block_ptr)
 {
   // Number of 32-bit values per block.
@@ -272,7 +289,8 @@ bool is_indirect_block(unsigned char* block_ptr)
 #if SKIPZEROES
       if (hasZero)
       {
-        // There already was 0, now it is not 0 --- this is not an indirect block
+        // There already was 0, now it is not 0 --- this might be an indirect block of a file with 'holes'.
+	// However, fail and return false.
         return false;
       }
 #endif
@@ -297,7 +315,16 @@ bool is_indirect_block(unsigned char* block_ptr)
   }
 
   if (vmax == 0)
+  {
+    std::cout << std::flush;
+    std::cerr << "WARNING: is_indirect_block() was called for a block with ONLY zeroes. "
+        "The correct return value depends on where we were called from. This is not "
+	"implemented yet!" << std::endl;
+    // This should return 'true' if we're called from is_double_indirect_block or is_tripple_indirect_block:
+    // it should not lead to failure namely. In any case, we can definitely not be sure we return the
+    // correct value; a block with only zeroes can theoretically be anything.
     return false;	// Only zeroes.
+  }
 
   // Maximum number of bytes to allocate in an array.
   uint32_t const max_array_size = blocks_per_group(super_block);

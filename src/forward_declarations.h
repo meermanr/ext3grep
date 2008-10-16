@@ -40,7 +40,7 @@ void print_block_to(std::ostream& os, unsigned char* block);
 void iterate_over_directory(unsigned char* block, int blocknr,
     bool (*action)(ext3_dir_entry_2 const&, Inode const&, bool, bool, bool, bool, bool, bool, Parent*, void*), Parent* parent, void* data);
 void iterate_over_directory_action(int blocknr, void* data);
-void iterate_over_existing_directory_action(int blocknr, void* data);
+void iterate_over_existing_directory_action(int blocknr, int, void* data);
 void iterate_over_journal(
     bool (*action_tag)(uint32_t block, uint32_t sequence, journal_block_tag_t*, void* data),
     bool (*action_revoke)(uint32_t block, uint32_t sequence, journal_revoke_header_t*, void* data),

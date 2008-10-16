@@ -40,17 +40,18 @@
 // Constants used with iterate_over_all_blocks_of
 unsigned int const direct_bit = 1;		// Call action() for real blocks.
 unsigned int const indirect_bit = 2;		// Call action() for (double/tripple) indirect blocks.
+unsigned int const hole_bit = 4;		// Call action() for holes (blocknr will be 0).
 
-void print_directory_action(int blocknr, void*);
-bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*action)(int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit, bool diagnose = false);
-void find_block_action(int blocknr, void* ptr);
+void print_directory_action(int blocknr, int file_block_nr, void*);
+bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*action)(int, int, void*), void* data = NULL, unsigned int indirect_mask = direct_bit, bool diagnose = false);
+void find_block_action(int blocknr, int file_block_nr, void* ptr);
 
 struct find_block_data_st {
   bool found_block;
   int block_looking_for;
 };
 
-inline bool iterate_over_all_blocks_of(InodePointer inode, int inode_number, void (*action)(int, void*), void* data = NULL,
+inline bool iterate_over_all_blocks_of(InodePointer inode, int inode_number, void (*action)(int, int, void*), void* data = NULL,
     unsigned int indirect_mask = direct_bit, bool diagnose = false)
 {
   // inode is dereferenced here in good faith that no reference to it is kept (since there are no structs or classes that do so).

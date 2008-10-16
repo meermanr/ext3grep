@@ -126,7 +126,7 @@ bool iterate_over_all_blocks_of_double_indirect_block(int block, int& file_block
   unsigned int i = 0;
   while (i < block_size_ / sizeof(__le32))
   {
-    if (block_ptr[i])
+    if (block_ptr[i] || (indirect_mask & hole_bit))
     {
       if (!is_block_number(block_ptr[i]))
       {
@@ -137,9 +137,15 @@ bool iterate_over_all_blocks_of_double_indirect_block(int block, int& file_block
       if ((indirect_mask & indirect_bit) && !diagnose)
         action(block_ptr[i], -1, data);
       if ((indirect_mask & direct_bit))
+      {
         if (iterate_over_all_blocks_of_indirect_block(block_ptr[i], file_block_nr, action, data, indirect_mask, diagnose))
 	  break;
+      }
+      else
+	file_block_nr += limit;
     }
+    else
+      file_block_nr += limit;
     ++i;
   }
   if (diagnose)
@@ -156,7 +162,7 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, int& file_bloc
   unsigned int i = 0;
   while (i < block_size_ / sizeof(__le32))
   {
-    if (block_ptr[i])
+    if (block_ptr[i] || (indirect_mask | hole_bit))
     {
       if (!is_block_number(block_ptr[i]))
       {
@@ -169,6 +175,8 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, int& file_bloc
       if (iterate_over_all_blocks_of_double_indirect_block(block_ptr[i], file_block_nr, action, data, indirect_mask, diagnose))
         break;
     }
+    else
+      file_block_nr += limit * limit;
     ++i;
   }
   if (diagnose)

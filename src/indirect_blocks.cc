@@ -164,7 +164,7 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, int& file_bloc
   unsigned int const limit = block_size_ >> 2;
   while (i < limit)
   {
-    if (block_ptr[i] || (indirect_mask | hole_bit))
+    if (block_ptr[i] || (indirect_mask & hole_bit))
     {
       if (!is_block_number(block_ptr[i]))
       {

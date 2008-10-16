@@ -124,7 +124,7 @@ bool iterate_over_all_blocks_of_double_indirect_block(int block, int& file_block
   unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
   unsigned int i = 0;
-  int const limit = block_size_ >> 2;
+  unsigned int const limit = block_size_ >> 2;
   while (i < limit)
   {
     if (block_ptr[i] || (indirect_mask & hole_bit))
@@ -161,7 +161,7 @@ bool iterate_over_all_blocks_of_tripple_indirect_block(int block, int& file_bloc
   unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   __le32* block_ptr = (__le32*)get_block(block, block_buf);
   unsigned int i = 0;
-  int const limit = block_size_ >> 2;
+  unsigned int const limit = block_size_ >> 2;
   while (i < limit)
   {
     if (block_ptr[i] || (indirect_mask | hole_bit))
@@ -195,7 +195,7 @@ bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*act
   if (diagnose)
     std::cout << "Processing direct blocks..." << std::flush;
   int file_block_nr = 0;
-  int const limit = block_size_ >> 2;
+  unsigned int const limit = block_size_ >> 2;
   if ((indirect_mask & direct_bit))
     for (int i = 0; i < EXT3_NDIR_BLOCKS; ++i, ++file_block_nr)
       if (block_ptr[i] || (indirect_mask & hole_bit))

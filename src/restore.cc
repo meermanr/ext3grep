@@ -49,14 +49,7 @@
 void iterate_over_all_blocks_of__with__restore_file_action(void) { restore_file_action(0, 0, NULL); }
 #endif
 
-enum get_undeleted_inode_type {
-  ui_no_inode,
-  ui_real_inode,
-  ui_journal_inode,
-  ui_inode_too_old
-};
-
-get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence = NULL)
+get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence)
 {
   InodePointer real_inode(get_inode(inodenr));
   if (!real_inode->is_deleted())

@@ -501,7 +501,7 @@ void init_journal(void)
       // Normally a lasttime != 0 should do. But I ran into a case where the supposedly inode block
       // didn't contain inodes at all, but block numbers?! Therefore, check that lasttime > inode_count_,
       // which will be the case in 99.999% of the cases for a real time_t.
-      if (lasttime > inode_count_ && (__le32_to_cpu(lasttime) < oldtime || oldtime == 0))
+      if ((uint32_t)lasttime > inode_count_ && (__le32_to_cpu(lasttime) < (uint32_t)oldtime || oldtime == 0))
 	oldtime = __le32_to_cpu(lasttime);
     }
   }

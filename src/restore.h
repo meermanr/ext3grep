@@ -35,4 +35,13 @@ std::string const outputdir = "RESTORED_FILES/";
 
 void restore_inode(int inodenr, InodePointer real_inode, std::string const& outfile);
 
+enum get_undeleted_inode_type {
+  ui_no_inode,
+  ui_real_inode,
+  ui_journal_inode,
+  ui_inode_too_old
+};
+
+get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence = NULL);
+
 #endif // RESTORE_H

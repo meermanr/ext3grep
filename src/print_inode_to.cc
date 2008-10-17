@@ -93,15 +93,22 @@ void print_inode_to(std::ostream& os, Inode const& inode)
   if ((inode.mode() & 0xf000) != 0xa000 || inode.blocks() != 0)		// Not an inline symlink?
   {
     os << "\nDirect Blocks:";
+    long sb = (inode.size() + block_size_ - 1) / block_size_;	// Size in blocks.
     for (int n = 0; n < EXT3_NDIR_BLOCKS; ++n)
-      if (inode.block()[n])
-	os << ' ' << inode.block()[n];
+    {
+      os << ' ' << inode.block()[n];
+      --sb;
+      if (sb <= 0)
+	break;
+    }
     os << '\n';
-    if (inode.block()[EXT3_IND_BLOCK])
+    if (sb > 0)
       os << "Indirect Block: " << inode.block()[EXT3_IND_BLOCK] << '\n';
-    if (inode.block()[EXT3_DIND_BLOCK])
+    sb -= block_size_ >> 2;
+    if (sb > 0)
       os << "Double Indirect Block: " << inode.block()[EXT3_DIND_BLOCK] << '\n';
-    if (inode.block()[EXT3_TIND_BLOCK])
+    sb -= (block_size_ >> 2) * (block_size_ >> 2);
+    if (sb > 0)
       os << "Tripple Indirect Block: " << inode.block()[EXT3_TIND_BLOCK] << '\n';
   }
   else

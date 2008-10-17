@@ -197,6 +197,7 @@ bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*act
   int file_block_nr = 0;
   unsigned int const limit = block_size_ >> 2;
   if ((indirect_mask & direct_bit))
+  {
     for (int i = 0; i < EXT3_NDIR_BLOCKS; ++i, ++file_block_nr)
       if (block_ptr[i] || (indirect_mask & hole_bit))
       {
@@ -205,6 +206,7 @@ bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*act
 	else
 	  action(block_ptr[i], file_block_nr, data);
       }
+  }
   else
     file_block_nr += EXT3_NDIR_BLOCKS;
   if (diagnose)

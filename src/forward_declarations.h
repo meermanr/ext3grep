@@ -68,7 +68,6 @@ void print_directory_inode(int inode);
 void dump_names(void);
 void init_files(void);
 void show_journal_inodes(int inode);
-void show_journal_blocks(int blocknr);
 void restore_file(std::string const& outfile);
 void show_hardlinks(void);
 void init_accept(void);

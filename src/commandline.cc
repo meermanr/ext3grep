@@ -63,7 +63,6 @@ int commandline_search_inode = -1;
 hist_type commandline_histogram = hist_none;
 std::string commandline_inode_dirblock_table;
 int commandline_show_journal_inodes = -1;
-int commandline_show_journal_blocks = -1;
 std::vector<std::string> commandline_restore_file;
 std::string commandline_restore_inode;
 bool commandline_restore_all = false;
@@ -148,8 +147,6 @@ static void print_usage(std::ostream& os)
   os << "                         block numbers found and the inodes used for each file.\n";
   os << "  --show-journal-inodes ino\n";
   os << "                         Show copies of inode 'ino' still in the journal.\n";
-  os << "  --show-journal-blocks blk\n";
-  os << "                         Show copies of block 'blk' still in the journal.\n";
   os << "  --restore-inode ino[,ino,...]\n";
   os << "                         Restore the file(s) with known inode number 'ino'.\n";
   os << "                         The restored files are created in ./" << outputdir << "\n";
@@ -210,7 +207,6 @@ enum opts {
   opt_show_path_inodes,
   opt_inode_dirblock_table,
   opt_show_journal_inodes,
-  opt_show_journal_blocks,
   opt_restore_file,
   opt_restore_inode,
   opt_restore_all,
@@ -257,7 +253,6 @@ void decode_commandline_options(int& argc, char**& argv)
     {"show-path-inodes", 0, &long_option, opt_show_path_inodes},
     {"inode-dirblock-table", 1, &long_option, opt_inode_dirblock_table},
     {"show-journal-inodes", 1, &long_option, opt_show_journal_inodes},
-    {"show-journal-blocks", 1, &long_option, opt_show_journal_blocks},
     {"restore-inode", 1, &long_option, opt_restore_inode},
     {"restore-file", 1, &long_option, opt_restore_file},
     {"restore-all", 0, &long_option, opt_restore_all},
@@ -436,17 +431,6 @@ void decode_commandline_options(int& argc, char**& argv)
 	    ++exclusive1;
 	    ++exclusive2;
 	    break;
-	  case opt_show_journal_blocks:
-	    commandline_show_journal_blocks = atoi(optarg);
-	    if (commandline_show_journal_blocks < 0)
-	    {
-	      std::cout << std::flush;
-	      std::cerr << progname << ": --show-journal-blocks: block " << commandline_show_journal_blocks << " is out of range." << std::endl;
-	      exit(EXIT_FAILURE);
-	    }
-	    ++exclusive1;
-	    ++exclusive2;
-	    break;
           case opt_journal_block:
             commandline_journal_block = atoi(optarg);
 	    if (commandline_journal_block < 0)
@@ -499,13 +483,13 @@ void decode_commandline_options(int& argc, char**& argv)
   if (exclusive1 > 1)
   {
     std::cout << std::flush;
-    std::cerr << progname << ": Only one of --group, --inode, --block, --journal-block, --dump-names, --show-journal-inodes or --show-journal-blocks may be specified." << std::endl;
+    std::cerr << progname << ": Only one of --group, --inode, --block, --journal-block, --dump-names or --show-journal-inodes may be specified." << std::endl;
     exit(EXIT_FAILURE);
   }
   if (exclusive2 > 1)
   {
     std::cout << std::flush;
-    std::cerr << progname << ": Only one of --inode, --block, --search*, --journal-block, --dump-names, --show-journal-inodes or --show-journal-blocks may be specified." << std::endl;
+    std::cerr << progname << ": Only one of --inode, --block, --search*, --journal-block, --dump-names or --show-journal-inodes may be specified." << std::endl;
     exit(EXIT_FAILURE);
   }
   if (commandline_allocated && commandline_unallocated)

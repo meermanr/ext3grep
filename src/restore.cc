@@ -206,7 +206,7 @@ void restore_inode(int inodenr, InodePointer real_inode, std::string const& outf
     {
       int out;
       out = ::open(outputdir_outfile.c_str(), O_WRONLY|O_CREAT|O_TRUNC|O_LARGEFILE, 0777);
-      if (!out)
+      if (out == -1)
       {
 	std::cout << "Failed to open \"" << outputdir_outfile << "\".\n";
 	return;

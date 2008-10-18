@@ -390,6 +390,10 @@ void run_program(void)
 	  ASSERT(!is_inode(commandline_block));	// All inode blocks are allocated.
 	  ASSERT(!journal);			// All journal blocks are allocated.
 	}
+	if (is_indirect_block(block))
+	{
+	  std::cout << "Block " << commandline_block << " appears to be an (double/tripple) indirect block.\n";
+	}
       }
       else
       {

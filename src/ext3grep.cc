@@ -399,7 +399,7 @@ void run_program(void)
 	    __le32* block_numbers = reinterpret_cast<__le32*>(block);
 	    for (int i = 0; i < block_size_ >> 2; ++i)
 	    {
-	      std::cout << ' ' << std::setw(9) << block_numbers[i];
+	      std::cout << ' ' << std::setw(9) << std::setfill(' ') << block_numbers[i];
 	      if ((i + 1) % 8 == 0)
 	        std::cout << '\n';
 	    }

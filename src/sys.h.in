@@ -30,6 +30,9 @@
 #include "config.h"
 #endif
 
+// This is needed for lseek64.
+#define _LARGEFILE64_SOURCE
+
 #ifdef CWDEBUG
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE

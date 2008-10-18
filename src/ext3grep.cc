@@ -175,6 +175,16 @@ void run_program(void)
     commandline_group = inode_to_group(super_block, commandline_show_journal_inodes);
     // std::cout << "Inode " << commandline_show_journal_inodes << " is in group " << commandline_group << '\n';
   }
+  if (commandline_show_journal_blocks != -1)
+  {
+    if (commandline_show_journal_blocks >= block_count(super_block))
+    {
+      std::cout << std::flush;
+      std::cerr << progname << ": --show-journal-blocks: block " << commandline_show_journal_blocks << " is out of range. There are only " << block_count(super_block) << " blocks." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    commandline_group = block_to_group(super_block, commandline_show_journal_blocks);
+  }
 
   // Print group summary, if needed.
   if (!commandline_journal && commandline_inode_to_block == -1)
@@ -389,6 +399,10 @@ void run_program(void)
 	  std::cout << "Block " << commandline_block << " is Unallocated.\n";
 	  ASSERT(!is_inode(commandline_block));	// All inode blocks are allocated.
 	  ASSERT(!journal);			// All journal blocks are allocated.
+	}
+	if (is_indirect_block(block))
+	{
+	  std::cout << "Block " << commandline_block << " appears to be an (double/tripple) indirect block.\n";
 	}
       }
       else
@@ -703,6 +717,10 @@ void run_program(void)
   // Handle --show-journal-inodes
   if (commandline_show_journal_inodes != -1)
     show_journal_inodes(commandline_show_journal_inodes);
+
+  // Handle --show-journal-blocks
+  if (commandline_show_journal_blocks != -1)
+    show_journal_blocks(commandline_show_journal_blocks);
 
   // Print some useful information if no useful information was printed yet.
   if (!commandline_action && !commandline_journal)

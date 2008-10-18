@@ -30,6 +30,7 @@
 
 #include "journal.h"
 #include "print_inode_to.h"
+#include "forward_declarations.h"
 
 void show_journal_inodes(int inodenr)
 {
@@ -46,5 +47,18 @@ void show_journal_inodes(int inodenr)
       std::cout << "\n--------------Inode " << inodenr << "-----------------------\n";
       print_inode_to(std::cout, inode);
     }
+  }
+}
+
+void show_journal_blocks(int blocknr)
+{
+  std::vector<std::pair<int, unsigned char*> > blocks;
+  get_blocks_from_journal(blocknr, blocks);
+  std::cout << "Copies of block " << blocknr << " found in the journal:\n";
+  for (std::vector<std::pair<int, unsigned char*> >::iterator iter = blocks.begin(); iter != blocks.end(); ++iter)
+  {
+    std::cout << "\n--------------Block " << blocknr << "------ Sequence# " << iter->first << "-----------------\n";
+    print_block_to(std::cout, iter->second);
+    delete [] iter->second;
   }
 }

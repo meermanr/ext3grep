@@ -62,5 +62,6 @@ extern uint32_t max_sequence;
 
 uint32_t find_largest_journal_sequence_number(int block);
 void get_inodes_from_journal(int inode, std::vector<std::pair<int, Inode> >& inodes);
+void get_blocks_from_journal(uint32_t block, std::vector<std::pair<int, unsigned char*> >& blocks);
 
 #endif // JOURNAL_H

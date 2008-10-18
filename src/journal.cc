@@ -761,3 +761,24 @@ void get_inodes_from_journal(int inode, std::vector<std::pair<int, Inode> >& ino
     }
   }
 }
+
+void get_blocks_from_journal(uint32_t block, std::vector<std::pair<int, unsigned char*> >& blocks)
+{
+  block_to_descriptors_map_type::iterator descriptors_iter = block_to_descriptors_map.find(block);
+  if (descriptors_iter != block_to_descriptors_map.end())
+  {
+    std::vector<Descriptor*>& descriptors(descriptors_iter->second);
+    for (std::vector<Descriptor*>::reverse_iterator descriptor_iter = descriptors.rbegin(); descriptor_iter != descriptors.rend(); ++descriptor_iter)
+    {
+      Descriptor& descriptor(**descriptor_iter);
+      if (descriptor.descriptor_type() != dt_tag)
+        continue;
+      DescriptorTag& tag(static_cast<DescriptorTag&>(descriptor));
+      ASSERT(tag.block() == block);
+      unsigned char* block_ptr = new unsigned char[block_size_];
+      get_block(descriptor.block(), block_ptr);
+      blocks.push_back(std::pair<int, unsigned char*>(descriptor.sequence(), block_ptr));
+    }
+  }
+}
+

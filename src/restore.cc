@@ -96,7 +96,12 @@ void restore_file_action(int blocknr, int file_block_nr, void* ptr)
     ASSERT(data.expected_file_block_nr != -1);	// It's set to -1 below when we reached the end of the file.
     off64_t pos = ((off64_t) file_block_nr) * block_size_;
     if (lseek64(data.out, pos, SEEK_SET) == (off_t) -1)
-      DoutFatal(dc::core, "restore_file_action: lseek64 failed");
+    {
+      int error = errno;
+      std::cout << std::flush;
+      std::cerr << progname << "restore_file_action: could not lseek64 to position " << pos << ": " << strerror(error) << std::endl;
+      exit(EXIT_FAILURE);
+    }
     data.expected_file_block_nr = file_block_nr;
   }
 
@@ -179,6 +184,12 @@ void restore_inode(int inodenr, InodePointer real_inode, std::string const& outf
       std::cout << std::flush;
       std::cerr << progname << ": could not create directory " << outputdir_outfile << ": " << strerror(error) << std::endl;
       exit(EXIT_FAILURE);
+    }
+    if (chmod(outputdir_outfile.c_str(), mode) == -1)
+    {
+      int error = errno;
+      std::cout << "WARNING: failed to set mode on directory " << outputdir_outfile << std::endl;
+      std::cerr << progname << ": chmod: " << strerror(error) << std::endl;
     }
     struct utimbuf ub;
     ub.actime = real_inode->atime();

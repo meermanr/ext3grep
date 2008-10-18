@@ -78,10 +78,11 @@ get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* seq
 extern "C" int lutimes (char const*, struct timeval const [2]);
 
 struct Data {
-  std::ostream& out;
+  int out;
   off_t remaining_size;
+  int expected_file_block_nr;
 
-  Data(std::ostream& out_, off_t remaining_size_) : out(out_), remaining_size(remaining_size_) { }
+  Data(int out_, off_t remaining_size_) : out(out_), remaining_size(remaining_size_), expected_file_block_nr(0) { }
 };
 
 void restore_file_action(int blocknr, int file_block_nr, void* ptr)
@@ -90,13 +91,28 @@ void restore_file_action(int blocknr, int file_block_nr, void* ptr)
   static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
   int len;
 
+  if (data.expected_file_block_nr != file_block_nr)
+  {
+    ASSERT(data.expected_file_block_nr != -1);	// It's set to -1 below when we reached the end of the file.
+    off64_t pos = ((off64_t) file_block_nr) * block_size_;
+    if (lseek64(data.out, pos, SEEK_SET) == (off_t) -1)
+      DoutFatal(dc::core, "restore_file_action: lseek64 failed");
+    data.expected_file_block_nr = file_block_nr;
+  }
+
   get_block(blocknr, block_buf);
   if (data.remaining_size > block_size_)
+  {
     len = block_size_;
+    data.expected_file_block_nr += block_size_;
+  }
   else
+  {
     len = data.remaining_size;
-  data.out.write((char const*)block_buf, len);
-  ASSERT(data.out.good());
+    data.expected_file_block_nr = -1;	// This was the last block.
+  }
+  int res = ::write(data.out, (char const*)block_buf, len);
+  ASSERT(res == len);
   data.remaining_size -= len;
 }
 
@@ -188,8 +204,8 @@ void restore_inode(int inodenr, InodePointer real_inode, std::string const& outf
     ASSERT(!inode.is_deleted());
     if (is_regular_file(inode))
     {
-      std::ofstream out;
-      out.open(outputdir_outfile.c_str());
+      int out;
+      out = ::open(outputdir_outfile.c_str(), O_WRONLY|O_CREAT|O_TRUNC|O_LARGEFILE, 0777);
       if (!out)
       {
 	std::cout << "Failed to open \"" << outputdir_outfile << "\".\n";
@@ -202,8 +218,7 @@ void restore_inode(int inodenr, InodePointer real_inode, std::string const& outf
       iterate_over_all_blocks_of__with__restore_file_action();
 #endif
       bool reused_or_corrupted_indirect_block8 = iterate_over_all_blocks_of(inode, inodenr, restore_file_action, &data);
-      ASSERT(out.good());
-      out.close();
+      ::close(out);
       if (reused_or_corrupted_indirect_block8)
       {
         std::cout << "WARNING: Failed to restore " << outfile << ": encountered a reused or corrupted (double/triple) indirect block!\n";

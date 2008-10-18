@@ -393,6 +393,17 @@ void run_program(void)
 	if (is_indirect_block(block))
 	{
 	  std::cout << "Block " << commandline_block << " appears to be an (double/tripple) indirect block.\n";
+	  if (commandline_print)
+	  {
+	    std::cout << "It contains the following block numbers:\n";
+	    __le32* block_numbers = reinterpret_cast<__le32*>(block);
+	    for (int i = 0; i < block_size_ >> 2; ++i)
+	    {
+	      std::cout << ' ' << std::setw(9) << block_numbers[i];
+	      if ((i + 1) % 8 == 0)
+	        std::cout << '\n';
+	    }
+	  }
 	}
       }
       else

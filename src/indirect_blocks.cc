@@ -278,7 +278,7 @@ bool iterate_over_all_blocks_of(Inode const& inode, int inode_number, void (*act
 
 // This must be 0.
 #define SKIPZEROES 0
-bool is_indirect_block(unsigned char* block_ptr)
+bool is_indirect_block(unsigned char* block_ptr, bool verbose)
 {
   // Number of 32-bit values per block.
   int const values_per_block = block_size_ / sizeof(__le32);
@@ -301,6 +301,8 @@ bool is_indirect_block(unsigned char* block_ptr)
 #if SKIPZEROES
       if (hasZero)
       {
+	if (verbose)
+	  std::cout << "Found non-zero after zero!" << std::endl;
         // There already was 0, now it is not 0 --- this might be an indirect block of a file with 'holes'.
 	// However, fail and return false.
         return false;
@@ -309,6 +311,8 @@ bool is_indirect_block(unsigned char* block_ptr)
       if (!is_data_block_number(v))
       {
         // This is not a valid block pointer.
+	if (verbose)
+	  std::cout << "Invalid block pointer!" << std::endl;
         return false;
       }
 
@@ -328,10 +332,14 @@ bool is_indirect_block(unsigned char* block_ptr)
 
   if (vmax == 0)
   {
-    std::cout << std::flush;
-    std::cerr << "WARNING: is_indirect_block() was called for a block with ONLY zeroes. "
-        "The correct return value depends on where we were called from. This is not "
-	"implemented yet!" << std::endl;
+    if (verbose)
+    {
+      std::cout << "Block with only zeroes!" << std::endl;
+      std::cout << std::flush;
+      std::cerr << "WARNING: is_indirect_block() was called for a block with ONLY zeroes. "
+	  "The correct return value depends on where we were called from. This is not "
+	  "implemented yet!" << std::endl;
+    }
     // This should return 'true' if we're called from is_double_indirect_block or is_tripple_indirect_block:
     // it should not lead to failure namely. In any case, we can definitely not be sure we return the
     // correct value; a block with only zeroes can theoretically be anything.
@@ -355,6 +363,8 @@ bool is_indirect_block(unsigned char* block_ptr)
       if (t[v - vmin])
       {
         // Value already present!
+	if (verbose)
+	  std::cout << "Duplicated values!" << std::endl;
         return false;
       }
       t[v - vmin] = 1;
@@ -374,7 +384,11 @@ bool is_indirect_block(unsigned char* block_ptr)
       if (!v)
         break;
       if (!bvSet.insert(v).second)	// Was already inserted?
+      {
+	if (verbose)
+	  std::cout << "Duplicated values!" << std::endl;
         return false;
+      }
     }
     return true;
   }

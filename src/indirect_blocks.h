@@ -78,6 +78,6 @@ inline bool iterate_over_all_blocks_of(InodePointer inode, int inode_number, voi
  *    - [bi] are all different.
  *    - [bi] != 0 for all i.
  */
-bool is_indirect_block(unsigned char* block_ptr);
+bool is_indirect_block(unsigned char* block_ptr, bool verbose = false);
 
 #endif // INDIRECT_BLOCKS_H

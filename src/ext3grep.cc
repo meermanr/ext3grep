@@ -400,9 +400,10 @@ void run_program(void)
 	    for (int i = 0; i < block_size_ >> 2; ++i)
 	    {
 	      std::cout << ' ' << std::setw(9) << std::setfill(' ') << block_numbers[i];
-	      if ((i + 1) % 8 == 0)
+	      if ((i + 1) % 10 == 0)
 	        std::cout << '\n';
 	    }
+	    std::cout << '\n';
 	  }
 	}
       }

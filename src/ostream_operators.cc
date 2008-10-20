@@ -243,13 +243,17 @@ std::ostream& operator<<(std::ostream& os, journal_revoke_header_t const& journa
   count /= sizeof(__be32);
   __be32 const* ptr = reinterpret_cast<__be32 const*>((unsigned char const*)&journal_revoke_header + sizeof(journal_revoke_header_t));
   int c = 0;
+  if (count > 0)
+    std::cout << "Revoked blocks:\n";
   for (uint32_t b = 0; b < count; ++b)
   {
-    std::cout << std::setfill(' ') << std::setw(8) << be2le(ptr[b]);
+    std::cout << std::setfill(' ') << std::setw(9) << be2le(ptr[b]);
     ++c;
     c &= 7;
     if (c == 0)
       std::cout << '\n';
+    else
+      std::cout << ' ';
   }
   return os;
 }

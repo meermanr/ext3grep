@@ -1232,7 +1232,7 @@ void custom(void)
 
 // This table contained blocks changed by running fsck.
 int fsckd_blocks[] = {
-  // Deleted to save space in this demonstration code.
+  0 // Deleted to save space in this demonstration code.
 };
 
 union block_t {
@@ -1283,7 +1283,7 @@ struct block_color {
     int group = block_to_group(super_block, bc.blocknr);
     int first_block = group_to_block(super_block, group);
     int last_block = first_block + 32767;
-    if (group & 1 == 1)
+    if ((group & 1) == 1)
       os << "\e[31m";
     else
       os << "\e[34m";

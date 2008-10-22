@@ -1651,7 +1651,7 @@ void get_sib(int block_number, __le32* buf, __le32 next_indirect_block)
     get_block(block_number, (unsigned char*)buf);
 }
 
-#define DO_ACTUAL_RECOVERY 1
+#define DO_ACTUAL_RECOVERY 0
 
 #if DO_ACTUAL_RECOVERY
 int outfd;

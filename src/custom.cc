@@ -43,10 +43,59 @@
 #include "init_consts.h"
 #include "print_inode_to.h"
 
-// This file was written and used for custom job: recovering emails
-// on a 40 GB partition that had no information left in the journal
-// and had been mounted for a week since the deletion.
+// The first part of this file was written and used for custom job:
+// recovering emails on a 40 GB partition that had no information
+// left in the journal and had been mounted for a week since the deletion.
 // In the end, 85% of the emails were recovered.
+//
+// The second part of this file was written and used for another
+// custom job: recovering a vmware flat file of 322 GB.
+// In the end, 100% was recovered.
+
+bool is_double_indirect_block(unsigned char* block_ptr)
+{
+  static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
+  std::cout << "Calling is_indirect_block(*)..." << std::endl;
+  if (!is_indirect_block(block_ptr), true)
+    return false;
+  uint32_t* p = reinterpret_cast<uint32_t*>(block_ptr);
+  do
+  {
+    unsigned char* indirect_block_ptr = get_block(*p, block_buf);
+    std::cout << "Calling is_indirect_block(" << *p << ")..." << std::endl;
+    std::cout << "Group: " << block_to_group(super_block, *p) << "; block: " << *p << std::endl;
+    if (!is_indirect_block(indirect_block_ptr), true)
+      return false;
+  }
+  while (*++p);
+  return true;
+}
+
+bool is_tripple_indirect_block(unsigned char* block_ptr)
+{
+  static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
+  std::cout << "Calling is_indirect_block(*)..." << std::endl;
+  if (!is_indirect_block(block_ptr), true)
+    return false;
+  uint32_t* p = reinterpret_cast<uint32_t*>(block_ptr);
+  bool res = true;
+  do
+  {
+    unsigned char* indirect_block_ptr = get_block(*p, block_buf);
+    std::cout << "Calling is_double_indirect_block(" << *p << ")..." << std::endl;
+    std::cout << "Group: " << block_to_group(super_block, *p) << "; block: " << *p << std::endl;
+    if (!is_double_indirect_block(indirect_block_ptr))
+    {
+      res = false;
+      std::cout << "FAILED! But continue anyway..." << std::endl;
+      //return false;
+    }
+  }
+  while (*++p);
+  return res;
+}
+
+#if 0
 
 // This must be set to the full email address (I obfuscated it before
 // committing this to SVN for obvious reasons).
@@ -288,8 +337,6 @@ block_size_pairs_st block_size_pairs[block_size_pairs_size] = {
   { 6141983, 2494271 }
 };
 
-#if 1
-
 struct Data {
   bool one_block;		// Set if the block ends on zeroes.
   bool sent;			// Set if the headers have a line containing "SquirrelMail authenticated user EMAILADDRESS".
@@ -376,38 +423,6 @@ int get_block_size(unsigned char* block_ptr)
     }
   }
   return size;
-}
-
-bool is_double_indirect_block(unsigned char* block_ptr)
-{
-  static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
-  if (!is_indirect_block(block_ptr))
-    return false;
-  uint32_t* p = reinterpret_cast<uint32_t*>(block_ptr);
-  do
-  {
-    unsigned char* indirect_block_ptr = get_block(*p, block_buf);
-    if (!is_indirect_block(indirect_block_ptr))
-      return false;
-  }
-  while (*++p);
-  return true;
-}
-
-bool is_tripple_indirect_block(unsigned char* block_ptr)
-{
-  static unsigned char block_buf[EXT3_MAX_BLOCK_SIZE];
-  if (!is_indirect_block(block_ptr))
-    return false;
-  uint32_t* p = reinterpret_cast<uint32_t*>(block_ptr);
-  do
-  {
-    unsigned char* indirect_block_ptr = get_block(*p, block_buf);
-    if (!is_double_indirect_block(indirect_block_ptr))
-      return false;
-  }
-  while (*++p);
-  return true;
 }
 
 enum answer_t {
@@ -1183,7 +1198,7 @@ void custom(void)
         continue;
       InodePointer inode(get_inode(inode_number));
       // Skip inodes with size 0 (whatever).
-      if (inode->size() == 0)
+      if (inode->size() == 0)	// Files with size 0 exist, of course.
         continue;
       // Skip symlinks.
       if (is_symlink(inode))
@@ -1206,4 +1221,698 @@ void custom(void)
       100.0 * ((number_of_direct_blocks.count - number_of_direct_blocks.failures) / number_of_direct_blocks.count) << "%." << std::endl;
 }
 #endif
+
+//-----------------------------------------------------------------------------
+//
+// The code of the second custom job starts here.
+//
+// This code was written and used to successfully recover a 322 GB vmware file,
+// containing an ext3 filesystem with all emails and websites of all clients
+// of a small webhosting company. Work hours: 80. Recovery: 100%.
+
+// This table contained blocks changed by running fsck.
+int fsckd_blocks[] = {
+  // Deleted to save space in this demonstration code.
+};
+
+union block_t {
+  struct data_st {
+    int file_block_offset;
+    int sequence_number;
+  } data;
+  unsigned char raw[4096];
+};
+static block_t buf;
+
+void custom_action(int block_nr, int file_block_nr, void*)
+{
+  static int last_file_block_nr = -1;
+  if (file_block_nr != -1)
+  {
+    if (file_block_nr != ++last_file_block_nr)
+    {
+      std::cout << "SKIPPED " << (file_block_nr - last_file_block_nr) << " BLOCKS, file blocks " << last_file_block_nr << " up till and including " << (file_block_nr - 1) << "!" << std::endl;
+      last_file_block_nr = file_block_nr;
+    }
+    get_block(block_nr, buf.raw);
+    std::cout << "buf.data.file_block_offset = " << buf.data.file_block_offset << "; file_block_nr = " << file_block_nr << std::endl;
+    assert(buf.data.file_block_offset == file_block_nr);
+  }
+  assert(block_nr);
+  if (block_nr == 167575554 || (block_nr >= 167606272 && block_nr <= 167606300))
+  {
+    std::cout << "USING BLOCK " << block_nr << "OVERWRITTEN BY FOREMOST!" << std::endl;
+    //assert(false);
+  }
+  for (unsigned int i = 0; i < sizeof(fsckd_blocks) / sizeof(fsckd_blocks[0]); ++i)
+  {
+    if (fsckd_blocks[i] == block_nr)
+    {
+      std::cout << "USING FSCK-ED BLOCK "<< block_nr << "!" << std::endl;
+      //assert(false);
+    }
+  }
+  std::cout << "File block nr: " << file_block_nr << "; block: " << block_nr << std::endl;
+}
+
+struct block_color {
+  int blocknr;
+  block_color(int bn) : blocknr(bn) { }
+  friend std::ostream& operator<<(std::ostream& os, block_color const& bc)
+  {
+    int group = block_to_group(super_block, bc.blocknr);
+    int first_block = group_to_block(super_block, group);
+    int last_block = first_block + 32767;
+    if (group & 1 == 1)
+      os << "\e[31m";
+    else
+      os << "\e[34m";
+    os << bc.blocknr << "\e[0m";
+    if (bc.blocknr == first_block)
+      os << '^';
+    else if (bc.blocknr == last_block)
+      os << '$';
+    return os;
+  }
+};
+
+class Range {
+  private:
+    bool first;
+    int last_blocknr;
+    int current_begin;
+    std::vector<std::pair<int, int> > v;
+
+  public:
+    Range(void) : first(true) { }
+
+    Range& operator+=(int blocknr)
+    {
+      if (first)
+      {
+	first = false;
+	current_begin = blocknr;
+      }
+      else
+      {
+	assert(blocknr > last_blocknr);
+        if (blocknr != last_blocknr + 1)
+	{
+	  v.push_back(std::pair<int, int>(current_begin, last_blocknr));
+	  current_begin = blocknr;
+	}
+      }
+      last_blocknr = blocknr;
+      return *this;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, Range const& range)
+    {
+      for (std::vector<std::pair<int, int> >::const_iterator iter = range.v.begin(); iter != range.v.end(); ++iter)
+	if (iter->first != iter->second)
+	  os << '[' << block_color(iter->first) << " - " << block_color(iter->second) <<
+	      " (" << (iter->second - iter->first + 1) << ")]";
+        else
+	  os << '[' << block_color(iter->first) << ']';
+      if (!range.first)
+      {
+	if (range.current_begin != range.last_blocknr)
+	  os << '[' << block_color(range.current_begin) << " - " << block_color(range.last_blocknr) <<
+	      " (" << (range.last_blocknr - range.current_begin + 1) << ")]";
+        else
+	  os << '[' << block_color(range.current_begin) << ']';
+      }
+      return os;
+    }
+};
+
+bool has_at_least_n_increasing_block_numbers(int n, unsigned char* block_buf)
+{
+  __le32* p = reinterpret_cast<__le32*>(block_buf);
+  __le32 last_block = 0;
+  int total = 0;
+  for (int i = 0; i < 1024; ++i)
+  {
+    if (p[i])
+    {
+      if (p[i] < last_block)
+	return false;
+      if (p[i] == last_block + 1)
+	++total;
+      last_block = p[i];
+    }
+  }
+  return total >= n;
+}
+
+// This function guesses what is the first valid Indirect Block in group 'group'.
+// Later I found a smarter way to do this by looking at the block bitmap updates
+// in the journal-- but this worked too.
+int first_indirect_block(int group, size_t& size)
+{
+  std::cout << "Entering first_indirect_block(" << group << ")\n";
+  static unsigned char block_buf[4096];
+  int first_block = group_to_block(super_block, group);
+  std::cout << "first_block = " << first_block << '\n';
+  int group_end = first_block + blocks_per_group(super_block);
+  std::cout << "group_end = " << group_end << '\n';
+  int freq[1025];
+  std::memset(freq, 0, sizeof(freq));
+  for (int b = first_block; b < group_end; ++b)
+  {
+    get_block(b, block_buf);
+    if (is_indirect_block(block_buf) && has_at_least_n_increasing_block_numbers(32, block_buf))
+    {
+      //std::cout << "Found indirect block at " << b << '\n';
+      freq[(b - first_block - 514) % 1025] += 1;	// 514 = bitmaps + inode table. 1025 = indirect block + its 1024 data blocks.
+    }
+  }
+  int best = 0;
+  int fbest = 0;
+  int total = 0;
+  std::vector<std::pair<int, int> > candidates;
+  for (int i = 0; i < 1025; ++i)
+  {
+    if (freq[i])
+    {
+      if (freq[i] > 1)
+      {
+	std::cout << i << " (" << freq[i] << "), ";
+	candidates.push_back(std::pair<int, int>(i, freq[i]));
+      }
+      total += freq[i];
+      if (freq[i] > fbest)
+      {
+	fbest = freq[i];
+	best = i;
+      }
+    }
+  }
+  std::cout << '\n';
+  std::cout << '\t' << "total: " << total << std::endl;
+  assert(!candidates.empty());
+  size = candidates.size();
+  if (size > 2)
+  {
+    std::cout << "FAILURE FOR GROUP " << group << ": indirect blocks are scattered! Returning -1.\n";
+    return -1;
+  }
+  if (size == 2)
+  {
+    int jump = 1;
+    if (group == 5146)
+      jump = 2;	// Special case, because this group contains the double indirect block.
+    int diff = candidates[1].first - candidates[0].first;
+    int sum = fbest;
+    if (diff == jump)
+    {
+      std::cout << "Choosing smallest of two\n";
+      best = candidates[0].first;
+      sum = candidates[0].second + candidates[1].second;
+    }
+    if (sum < 30)
+    {
+      std::cout << "WARNING: LOW INDIRECT BLOCK COUNT! There is a not insignificant chance that the heuristics fail in this case!\n";
+    }
+  }
+  else if (best > 0 && freq[best - 1] == 1)
+  {
+    size_t prev_size;
+    int prev_first_indirect_block = first_indirect_block(group - 1, prev_size);
+    // Turn it into the real block number.
+    prev_first_indirect_block += group_to_block(super_block, group - 1) + 514;
+    // Do the same for 'best - 1'.
+    int next_first_indirect_block = group_to_block(super_block, group) + 514 + best - 1;
+    // Use this heuristic magical formula to test if it's likely that in fact
+    // we have a pair with sizes (1, 30).
+    if ((prev_first_indirect_block + 520) % 1025 == next_first_indirect_block % 1025 && prev_size == 1)
+    {
+      std::cout << "Decrementing best!\n";
+      --best;
+    }
+  }
+  std::cout << "Leaving first_indirect_block() (returning " << best << ")\n";
+  return best;
+}
+
+int first_indirect_block(int group)
+{
+  size_t dummy;
+  return first_indirect_block(group, dummy);
+}
+
+int fib_table1[] = {
+  190, 742, 269, 821, 348, 900, 427, 979, 506, 33, 585, 112, 664, 191, 743, 270,
+  // ... lots of numbers deleted to save space in the demonstration code.
+  456, 1008, 535, 62
+};
+
+// WARNING: This table was HAND EDITTED (after generation).
+int fib_table2[] = {
+  570, 91, 644, 170, 722, 248, 800, 321, 873, 400, 952, 479, 6, 558, 85, 637,
+  // ... lots of numbers deleted to save space in the demonstration code.
+  198, 750, 277, 829, 356, 908, 435, 987, 514, 41, 593, 120, 672
+};
+
+// Manually recovered Tripple Indirect Block.
+int tib_table[] = {
+  168649904, 169716665, 170782906, 171849661, 172915902, 173982663, 175049424, 176115659,
+  177182420, 178248661, 179315416, 180381657, 181448418, 182514659, 117359, 1189230,
+  2256495, 3324280, 4392059, 5458300, 6525061, 7591302, 8659087, 9725322,
+  30015342, 31082103, 32151318, 33217553, 34284314, 35350549, 36417310, 37483551,
+  38550306, 39617067, 40683308, 41750069, 42816304, 43883065, 44949306, 46016067,
+  47082302, 48149063, 49215304, 50282065, 51348820, 52415061, 53481822, 54548057,
+  55614818, 56681059, 57747820, 58814061, 59880816, 60947057, 62013818, 63080573,
+  64146814, 65213575, 66279816, 67346571, 68412812, 69479573, 70545808, 71612569,
+  72680349, 73746590, 74813351, 75879586, 76946347, 78012588, 79080373, 80146614,
+  81213375, 82279616
+};
+
+__le32 const dib_169716665[/*1024*/] = {
+  /* 1024 block numbers deleted to save space */
+};
+
+__le32 const dib_39617067[/*1024*/] = {
+  /* 1024 block numbers deleted to save space */
+};
+
+__le32 const dib_49215304[/*1024*/] = {
+  /* 1024 block numbers deleted to save space */
+};
+
+__le32 const dib_56681059[/*1024*/] = {
+  /* 1024 block numbers deleted to save space */
+};
+
+__le32 const dib_66279816[/*1024*/] = {
+  /* 1024 block numbers deleted to save space */
+};
+
+// The function 'first_indirect_block' is rather slow.
+// Therefore it was once used to generate fib_table1 and fib_table2,
+// and this function uses the table.
+int first_indirect_block_table(int group)
+{
+  if (5147 <= group && group <= 5598)
+    return fib_table1[group - 5147];
+  else if (2 <= group && group <= 2510)
+  {
+    int res = fib_table2[group - 2];
+    if (res == -1)
+    {
+      std::cout << "FAILURE for group " << group << "\n\t";
+      first_indirect_block(group);
+      std::cout << std::endl;
+    }
+    assert(res != -1);
+    return res;
+  }
+
+  int res = first_indirect_block(group);
+  std::cout << "MISSING: first_indirect_block_table(" << group << ") = " << res << std::endl;
+  assert(res != -1);
+  return res;
+}
+
+// Given the block number of an (single) 'Indirect Block', return the next Indirect block
+// using the following heuristics: The next indirect block immediately follows the
+// last data block, which all immediately followed the last Indirect block; hence:
+// the next Indirect block is the current one plus 1025, UNLESS we reach the end
+// of a group. Then the next indirect block is retrieved from a table, which was
+// generated by determining what was the statistically most likely offset of such
+// equally spaced indirect blocks in the next group.
+__le32 next_indirect_block(__le32 current_indirect_block, bool need_restoring)
+{
+  // Special cases that the heuristics fail for:
+  if (current_indirect_block == 183467615)
+    return 183469160;
+  if (current_indirect_block == 183499910)
+    return 36375;
+  if (current_indirect_block == 10517828)
+    return 10519373;
+  if (current_indirect_block == 10523473)
+    return 10537013;
+  if (current_indirect_block == 10537013)
+    return 29726800;
+  if (current_indirect_block == 29754995)
+    return 29778002;
+  if (current_indirect_block == 32048904)
+    return 32052383;
+  int current_group = block_to_group(super_block, current_indirect_block);
+  int next_group = block_to_group(super_block, current_indirect_block + 1025);
+  if (current_group != next_group)
+  {
+    int group_start = group_to_block(super_block, current_group);
+    int group_end = group_start + blocks_per_group(super_block);
+    int left = group_end - current_indirect_block - 1;
+    std::cout << "left = " << left << std::endl;
+
+    int next_group_start = group_to_block(super_block, next_group);
+    std::cout << "next_group_start = " << next_group_start << std::endl;
+    int fib = need_restoring ? first_indirect_block(next_group) : first_indirect_block_table(next_group);
+    std::cout << "Returning " << next_group_start + fib + 514 << std::endl;
+    return next_group_start + fib + 514;
+  }
+  return current_indirect_block + 1025;
+}
+
+// Return true if this block is wiped (contains only zeroes).
+bool all_zeroes(__le32* indirect_block_buf)
+{
+  for(int i = 0; i < 1024; ++i)
+  {
+    if (indirect_block_buf[i])
+      return false;
+  }
+  return true;
+}
+
+// Retriece a Double Indirect Block.
+void get_dib(int block_number, __le32* buf)
+{
+  // These blocks were wiped during deletion.
+  if (block_number == 169716665)
+    memcpy(buf, dib_169716665, sizeof(dib_169716665));
+  else if (block_number == 39617067)
+    memcpy(buf, dib_39617067, sizeof(dib_39617067));
+  else if (block_number == 49215304)
+    memcpy(buf, dib_49215304, sizeof(dib_49215304));
+  else if (block_number == 56681059)
+    memcpy(buf, dib_56681059, sizeof(dib_56681059));
+  else if (block_number == 66279816)
+    memcpy(buf, dib_66279816, sizeof(dib_66279816));
+  else
+  // The rest is still intact.
+    get_block(block_number, (unsigned char*)buf);
+}
+
+void generate_sib(int sib_number, __le32* buf, __le32 next_indirect_block)
+{
+  int sib_group = block_to_group(super_block, sib_number);
+  int next_group_start = group_to_block(super_block, sib_group + 1);
+  if (sib_group == 5599)		// Last group?
+    next_group_start = 183500446;	// Byte-past-the-end in this group (fake a new group start).
+  int block_number = sib_number;
+  for (int k = 0; k < 1024; ++k)
+  {
+    ++block_number;
+    if (block_number == next_group_start)
+    {
+      int next_block_number = next_indirect_block - (1024 - k);
+#if 0	// Not a gamble anymore. See skip6check.
+      if (sib_number == 183499910)	// The only special case (manualy checked to be ok too)
+      {
+      std::cout << "Gambling that data block " << next_block_number << " follows " << (block_number - 1) << std::endl;
+      int group = block_to_group(super_block, next_block_number);
+      int next_group_start = group_to_block(super_block, group);
+      std::cout << "  number of skipped blocks at the start of group " << group << ": " << (next_block_number - next_group_start - 514) << std::endl;
+      }
+#endif
+      block_number = next_block_number;
+    }
+    buf[k] = block_number;
+  }
+}
+
+// This function retrieves a Single (normal) Indirect Block 'block_number').
+void get_sib(int block_number, __le32* buf, __le32 next_indirect_block)
+{
+  // These blocks were wiped during deletion.
+  if (block_number == 169868396 || block_number == 181632444 || block_number == 183499910 || block_number == 1900225 ||
+      block_number == 3801011 || block_number == 5668471 || block_number == 34111044 || block_number == 36011825 ||
+      block_number == 37879292 || block_number == 39780073 || block_number == 41680859 || block_number == 43548320 ||
+      block_number == 45449107 || block_number == 47316568 || block_number == 49249650 || block_number == 51117110 ||
+      block_number == 53017897 || block_number == 54918678 || block_number == 56819465 || block_number == 58720251 ||
+      block_number == 60620007 || block_number == 62520788 || block_number == 64421575 || block_number == 66386952 ||
+      block_number == 80608995 || block_number == 82509782)
+    generate_sib(block_number, buf, next_indirect_block);
+  else
+  // The rest is still intact.
+    get_block(block_number, (unsigned char*)buf);
+}
+
+#define DO_ACTUAL_RECOVERY 1
+
+#if DO_ACTUAL_RECOVERY
+int outfd;
+#endif
+int count = 0;
+
+struct timeval& operator-=(struct timeval& t1, struct timeval const& t2)
+{
+  t1.tv_sec -= t2.tv_sec;
+  if ((t1.tv_usec -= t2.tv_usec) < 0)
+  {
+    t1.tv_usec += 1000000;
+    --t1.tv_sec;
+  }
+  return t1;
+}
+
+static char const zeroes[4096] = { 0, };
+struct timeval start_time;
+struct timeval current_time;
+int const total_blocks = 78643200;
+int remaining_blocks = total_blocks;
+
+// This function is called for every data block.
+void process_data_block(int block_number)
+{
+#if DO_ACTUAL_RECOVERY
+  assert(block_number);
+  // If the block is a block that was corrupted by running 'foremost' after deletion,
+  // and before umounting, then gamble it originally only contained zeroes because
+  // many blocks before and after this region turn out to contain zeroes.
+  if (block_number == 167575554 || (block_number >= 167606272 && block_number <= 167606300))
+  {
+    int len = ::write(outfd, zeroes, 4096);
+    assert(len == 4096);
+  }
+  else
+  {
+    static unsigned char block_buf[4096];
+    get_block(block_number, block_buf);
+    int len = ::write(outfd, (char*)block_buf, 4096);
+    assert(len == 4096);
+  }
+#else
+  if (block_number == 167575554 || (block_number >= 167606272 && block_number <= 167606300))
+  {
+    std::cout << "Using foremost block " << block_number << " at file block " << count << '\n';
+  }
+#endif
+  ++count;
+  --remaining_blocks;
+  if (remaining_blocks % 10000 == 0)
+  {
+    gettimeofday(&current_time, NULL);
+    current_time -= start_time;
+    double seconds = current_time.tv_sec + current_time.tv_usec * 1e-6;
+    double blocks_per_second = (total_blocks - remaining_blocks) / seconds;
+    std::cout << "Speed: " << (blocks_per_second * 4.096e-3) << " MB/s. ";
+    double remaining_minutes = remaining_blocks / blocks_per_second / 60;
+    std::cout << "ETA: " << std::fixed << remaining_minutes << " minutes." << std::endl;
+  }
+}
+
+void custom(void)
+{
+#if 0
+  // This code was used to do many/various quick queries.
+  std::cout << block_to_group(super_block, 182514659) << '\n';
+  //std::cout << group_to_block(super_block, block_to_group(super_block, 2589192)) << '\n';
+  //first_indirect_block(5184);
+  return;
+#endif
+  //init_journal();
+#if 1
+  // This code was used to do the final recovery.
+#if DO_ACTUAL_RECOVERY
+  outfd = ::open("/home/carlo/RECOVERED.MOSES-DRIVE-322GB.VDMK-flat.vmdk", O_WRONLY|O_CREAT|O_TRUNC|O_LARGEFILE, 0644);
+#endif
+  gettimeofday(&start_time, NULL);
+  int blocknrs[] = { 163021314, 163021315, 163021316, 163021317, 163021318, 163021319, 163054082, 163054083, 163054084, 163054085, 163054086, 163054087 };
+  for (int i = 0; i < (int)(sizeof(blocknrs) / sizeof(int)); ++i)
+  {
+    process_data_block(blocknrs[i]);
+  }
+  static __le32 sib_buf[1024];
+  get_block(167582637, (unsigned char*)sib_buf);
+  for (int k = 0; k < 1024; ++k)
+  {
+    process_data_block(sib_buf[k]);
+  }
+  static __le32 dib_buf[1024];
+  get_block(167583662, (unsigned char*)dib_buf);
+  for (int i = 0; i < 1024; ++i)
+  {
+    assert(dib_buf[i]);
+    get_block(dib_buf[i], (unsigned char*)sib_buf);
+    for (int k = 0; k < 1024; ++k)
+    {
+      process_data_block(sib_buf[k]);
+    }
+  }
+  for (unsigned int j = 0; j < sizeof(tib_table) / sizeof(*tib_table); ++j)
+  {
+    bool saw_zeroes = false;
+    int block_number = tib_table[j];
+    get_dib(block_number, dib_buf);
+    assert(is_indirect_block((unsigned char*)dib_buf));
+    for (int i = 0; i < 1024; ++i)
+    {
+      if (!dib_buf[i])
+	continue;
+      __le32 next_indirect_block;
+      if (i < 1023)
+	next_indirect_block = dib_buf[i + 1];
+      else
+	next_indirect_block = tib_table[j + 1];
+      get_sib(dib_buf[i], sib_buf, next_indirect_block);
+      if (all_zeroes(sib_buf))
+      {
+#if 0
+	std::cout << block_number << " --> " << dib_buf[i] << " == ZEROES!\n";
+	saw_zeroes = true;
+#else
+	assert(false);
+#endif
+      }
+      else
+      {
+	assert(is_indirect_block((unsigned char*)sib_buf, true));
+	if (sib_buf[0] != dib_buf[i] + 1)
+	{
+	  assert(dib_buf[i] + 1 == (__le32)group_to_block(super_block, block_to_group(super_block, sib_buf[0])));
+	}
+	process_data_block(sib_buf[0]);
+	for (int k = 1; k < 1024; ++k)
+	{
+	  if (dib_buf[i] == 83344321 && sib_buf[k] == 0)
+	    continue;
+	  if (sib_buf[k] != sib_buf[k - 1] + 1)
+	  {
+	    if (sib_buf[k - 1] != (__le32)group_to_block(super_block, block_to_group(super_block, sib_buf[k])) - 1)
+	    {
+	      std::cout << block_number << " --> " << dib_buf[i] << " --> " << sib_buf[k] <<
+		  " fails hypothesis. It is the previous entry plus " << (sib_buf[k] - sib_buf[k - 1]) << " instead of plus 1.\n";
+	    }
+	  }
+	  process_data_block(sib_buf[k]);
+	}
+	if (dib_buf[i] == 83344321)
+	  continue;
+	if (sib_buf[1023] + 1 != next_indirect_block)
+	{
+	  int current_group = block_to_group(super_block, sib_buf[1023]);
+	  int next_group = block_to_group(super_block, sib_buf[1023] + 1);
+	  assert(current_group == next_group - 1);
+	}
+      }
+    }
+    if (!saw_zeroes)
+      std::cout << block_number << " OK" << std::endl;
+  }
+  std::cout << "Total number of blocks: " << count << std::endl;
+#if DO_ACTUAL_RECOVERY
+  ::close(outfd);
+#endif
+#endif
+#if 0
+  // This code was used to see if the file that had to be recovered used sparse data
+  // (zero block numbers, meaning a block with only zeroes) and whether or not
+  // blocks where used that were corrupted AFTER the deletion of this file (the
+  // so called 'foremost' blocks).
+  Inode inode;
+  int inode_nr = 34818; // 81362958
+  get_undeleted_inode_type res = get_undeleted_inode(inode_nr, inode);
+  //assert(res == ui_journal_inode);
+  iterate_over_all_blocks_of(inode, inode_nr, custom_action, NULL, direct_bit|indirect_bit, false);
+#endif
+#if 0
+  // This was used to create fib_table2 (and fib_table1 with different loop parameters).
+  // However, fib_table2 was hand editted at a few places after that.
+  std::vector<int> v;
+  for (int group = 2; group <= 2510; ++group)
+  {
+    int res = first_indirect_block(group);
+    v.push_back(res);
+  }
+  int count = 0;
+  for (std::vector<int>::iterator iter = v.begin(); iter != v.end(); ++iter)
+  {
+    if (count % 16 == 0)
+      std::cout << ",\n  ";
+    else
+      std::cout << ", ";
+    std::cout << *iter;
+    ++count;
+  }
+  std::cout << std::endl;
+  return;
+#endif
+#if 0
+  // This code either tests the heuristic code to generate double indirect blocks,
+  // by comparing what it would do with the actual data of existing blocks,
+  // or it generates such a block; used to generate tables dib_169716665, dib_39617067 etc.
+  for (unsigned int j = 0; j < sizeof(tib_table) / sizeof(*tib_table); ++j)
+  {
+    int block_number = tib_table[j];
+    bool need_restoring =
+        (block_number == 169716665 || block_number == 39617067 || block_number == 49215304 ||
+         block_number == 56681059 || block_number == 66279816);
+    // Toggle this to test the heuristic code, or to generate the missing double indirect blocks.
+    if (!need_restoring)
+      continue;
+    __le32 predicted_indirect_block = block_number + 1;
+    std::cout << block_color(block_number) << ": Double indirect block.\n";
+    __le32 double_block_buf[1024];
+    __le32 indirect_block_buf[1024];
+    get_block(block_number, (unsigned char*)double_block_buf);
+    for (int i = 0; i < 1024; ++i)
+    {
+      if (!need_restoring || double_block_buf[i])
+      {
+	std::cout << '\t' << block_color(double_block_buf[i]) << ": Indirect block.\n";
+	get_block(double_block_buf[i], (unsigned char*)indirect_block_buf);
+	if (all_zeroes(indirect_block_buf))
+	{
+	  std::cout << "\t\tZEROES\n";
+	  assert(double_block_buf[i] == predicted_indirect_block);
+	}
+	else
+	{
+	  assert(is_indirect_block((unsigned char*)indirect_block_buf));
+	  if (double_block_buf[i] != predicted_indirect_block)
+	  {
+	    unsigned char buf[4096];
+	    get_block(predicted_indirect_block, buf);
+	    assert(!is_indirect_block(buf));
+	    predicted_indirect_block += 1025;
+	  }
+	  assert(double_block_buf[i] == predicted_indirect_block);
+	  Range range;
+	  for (int j = 0; j < 1024; ++j)
+	    range += indirect_block_buf[j];
+	  std::cout << "\t\t" << range << '\n';
+	}
+      }
+      else
+      {
+	std::cout << "\tPredicted indirect block: " << predicted_indirect_block << '\n';
+	get_block(predicted_indirect_block, (unsigned char*)indirect_block_buf);
+	if (all_zeroes(indirect_block_buf))
+	{
+	  std::cout << "\t\tZEROES\n";
+	}
+	else
+	{
+	  assert(is_indirect_block((unsigned char*)indirect_block_buf));
+	}
+      }
+      predicted_indirect_block = next_indirect_block(predicted_indirect_block, need_restoring);
+    }
+  }
+#endif
+}
 

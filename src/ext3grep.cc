@@ -387,7 +387,10 @@ void run_program(void)
 	else
 	{
 	  std::cout << "Block " << commandline_block << " is Unallocated.\n";
-	  ASSERT(!is_inode(commandline_block));	// All inode blocks are allocated.
+	  // If this assertion fails, then it is possible that this DATA block looks like an inode,
+	  // most likely because the data itself is an ext3 filesystem. For example an ext3 image.
+	  // If that is possible, then just comment this assertion out.
+	  //ASSERT(!is_inode(commandline_block));	// All inode blocks are allocated.
 	  ASSERT(!journal);			// All journal blocks are allocated.
 	}
 	if (is_indirect_block(block))

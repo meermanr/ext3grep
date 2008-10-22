@@ -35,7 +35,7 @@
 struct Parent;
 class DirectoryBlockStats;
 void decode_commandline_options(int& argc, char**& argv);
-void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size);
+void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size, size_t addr_offset = 0);
 void print_block_to(std::ostream& os, unsigned char* block);
 void iterate_over_directory(unsigned char* block, int blocknr,
     bool (*action)(ext3_dir_entry_2 const&, Inode const&, bool, bool, bool, bool, bool, bool, Parent*, void*), Parent* parent, void* data);

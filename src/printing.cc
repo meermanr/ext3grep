@@ -37,7 +37,24 @@
 
 void print_block_to(std::ostream& os, unsigned char* block)
 {
-  dump_hex_to(os, block, block_size_);
+  unsigned char buf[16];
+  size_t offset = 0;
+  bool last_was_star = false;
+  for (unsigned char* p = block; p < block + block_size_; p += 16, offset += 16)
+  {
+    if (offset > 0 && offset + 16 < block_size_ && memcmp(buf, p, 16) == 0)
+    {
+      if (!last_was_star)
+      {
+	os << " *\n";
+	last_was_star = true;
+      }
+      continue;
+    }
+    dump_hex_to(os, p, 16, offset);
+    memcpy(buf, p, 16);
+    last_was_star = false;
+  }
 }
 
 void print_restrictions(void)

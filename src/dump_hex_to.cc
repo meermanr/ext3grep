@@ -32,11 +32,11 @@
 // dump_hex_to
 //
 
-void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size)
+void dump_hex_to(std::ostream& os, unsigned char const* buf, size_t size, size_t addr_offset)
 {
   for (size_t addr = 0; addr < size; addr += 16)
   {
-    os << std::hex << std::setfill('0') << std::setw(4) << addr << " |";
+    os << std::hex << std::setfill('0') << std::setw(4) << (addr + addr_offset) << " |";
     int offset;
     for (offset = 0; offset < 16 && addr + offset < size; ++offset)
       os << ' ' << std::hex << std::setfill('0') << std::setw(2) << (int)buf[addr + offset];

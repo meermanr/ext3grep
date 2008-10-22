@@ -168,7 +168,6 @@ std::string parent_directory(int
     // You can set test_blocknr and uncomment the #if 0'd code below to debug your regular expressions.
     static struct { char const* regexp; char const* path; } table[] = {
 //#ifdef CARLO_WOODS_CASE	This should be automatic now.
-//      { "^(.*-BNC|ircproxy-.*|EFnet|UnderNet|FreeNode .*|OFTC|NETWORK|GimpNet|AS-....)-.*\\.log$", "carlo/.xchat2/xchatlogs" },
 //      { "^([0-9]{10}-[0-9]{3,5}-[0-9]+|11c0a8020[0-9]{28})\\.ms$", "carlo/k3b/temp" },
 //      { "^1[12][0-9]{11}_(AutoSpeedSearchHistory|SpeedMan|seltrace|thread|alerts|debug)_[12]\\.log$", "carlo/.azureus/logs/save" },
 //      { "^opr0[0-9][0-9A-Z]{3}\\.(js|ico|htm|gif|png|html|jpeg|xml|flv|css|swf|jpg)$", "lost+found" },

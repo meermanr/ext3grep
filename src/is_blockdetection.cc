@@ -227,9 +227,9 @@ is_directory_type is_directory(unsigned char* block, int blocknr, DirectoryBlock
   if (commandline_block != -1)
     number_of_weird_characters = 0;
 #if 1
-  // New code... just accept everything at this point, except filenames existing of a single unlikely character.
-  if (dir_entry->name_len == 1 && number_of_weird_characters > 0 &&
-      (blocknr != 4745500 && blocknr != 6546132 && blocknr != 6549681 && blocknr != 6550057 && blocknr != 6582345 && blocknr != 6582333 && blocknr != 6583272))
+  // Accept everything at this point, except filenames existing of a single unlikely character.
+  // If --accept-all is given, accept even those.
+  if (!commandline_accept_all && dir_entry->name_len == 1 && number_of_weird_characters > 0)
     ok = false;
 #else
   // Setting ok to false means we reject this entry. Also setting illegal will reject it silently.

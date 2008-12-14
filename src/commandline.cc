@@ -70,6 +70,7 @@ bool commandline_show_hardlinks = false;
 bool commandline_debug = false;
 bool commandline_debug_malloc = false;
 bool commandline_custom = false;
+bool commandline_accept_all = false;
 
 //-----------------------------------------------------------------------------
 //
@@ -91,6 +92,7 @@ static void print_usage(std::ostream& os)
   os << "  --accept filen         Accept 'filen' as a legal filename. Can be used multi-\n";
   os << "                         ple times. If you change any --accept you must remove\n";
   os << "                         BOTH stage* files!\n";
+  os << "  --accept-all           Simply accept everything as filename.\n";
   os << "  --journal              Show content of journal.\n";
   os << "  --show-path-inodes     Show the inode of each directory component in paths.\n";
 #ifdef CWDEBUG
@@ -192,6 +194,7 @@ enum opts {
   opt_histogram,
   opt_directory,
   opt_accept,
+  opt_accept_all,
   opt_dump_names,
   opt_reallocated,
   opt_depth,
@@ -239,6 +242,7 @@ void decode_commandline_options(int& argc, char**& argv)
     {"histogram", 1, &long_option, opt_histogram},
     {"directory", 0, &long_option, opt_directory},
     {"accept", 1, &long_option, opt_accept},
+    {"accept-all", 0, &long_option, opt_accept_all},
     {"dump-names", 0, &long_option, opt_dump_names},
     {"depth", 1, &long_option, opt_depth},
     {"journal", 0, &long_option, opt_journal},
@@ -470,6 +474,10 @@ void decode_commandline_options(int& argc, char**& argv)
 	  {
 	    accepted_filenames.insert(Accept(optarg, true));
 	    break;
+	  }
+	  case opt_accept_all:
+	  {
+	    commandline_accept_all = true;
 	  }
         }
         break;

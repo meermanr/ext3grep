@@ -69,5 +69,6 @@ extern bool commandline_show_hardlinks;
 extern bool commandline_debug;
 extern bool commandline_debug_malloc;
 extern bool commandline_custom;
+extern bool commandline_accept_all;
 
 #endif // COMMANDLINE_H

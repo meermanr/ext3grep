@@ -35,6 +35,8 @@
 //
 
 #if !USE_MMAP
+void load_meta_data(int group);
+
 void load_inodes(int group)
 {
   DoutEntering(dc::notice, "load_inodes(" << group << ")");

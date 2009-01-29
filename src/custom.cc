@@ -24,6 +24,7 @@
 #ifndef USE_PCH
 #include "sys.h"
 #include <sys/types.h>
+#include <sys/time.h>
 #include "ext3.h"
 #include "debug.h"
 #endif

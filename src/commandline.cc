@@ -149,10 +149,14 @@ static void print_usage(std::ostream& os)
   os << "                         block numbers found and the inodes used for each file.\n";
   os << "  --show-journal-inodes ino\n";
   os << "                         Show copies of inode 'ino' still in the journal.\n";
-  os << "  --restore-inode ino[,ino,...]\n";
+  os << "  --restore-inode ino[@seqnr][,ino[@seqnr],...]\n";
   os << "                         Restore the file(s) with known inode number 'ino'.\n";
   os << "                         The restored files are created in ./" << outputdir << "\n";
   os << "                         with their inode number as extension (ie, inode.12345).\n";
+  os << "                         If '@seqnr' is provided then (only) the journal entry\n";
+  os << "                         with that sequence number is used, otherwise the latest\n";
+  os << "                         entry is used (if any). You can use that in the case a\n";
+  os << "                         a file was overwritten or truncated, rather than deleted.\n";
   os << "  --restore-file 'path' [--restore-file 'path' ...]\n"; 
   os << "                         Will restore file 'path'. 'path' is relative to the\n";
   os << "                         root of the partition and does not start with a '/' (it\n";

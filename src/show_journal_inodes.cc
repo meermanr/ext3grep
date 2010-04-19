@@ -39,11 +39,12 @@ void show_journal_inodes(int inodenr)
   uint32_t last_mtime = std::numeric_limits<uint32_t>::max();
   for (std::vector<std::pair<int, Inode> >::iterator iter = inodes.begin(); iter != inodes.end(); ++iter)
   {
+    int seq = iter->first;
     Inode const& inode(iter->second);
     if (inode.mtime() != last_mtime)
     {
       last_mtime = inode.mtime();
-      std::cout << "\n--------------Inode " << inodenr << "-----------------------\n";
+      std::cout << "\n--------------Inode " << inodenr << " (transaction " << seq << ")------------------\n";
       print_inode_to(std::cout, inode);
     }
   }

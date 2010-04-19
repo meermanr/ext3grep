@@ -497,10 +497,18 @@ void run_program(void)
     char comma;
     while(is >> inodenr)
     {
+      int seqnr = latest;
+      if (is.peek() == '@')
+      {
+	is >> comma;	// Eat the '@'.
+	is >> seqnr;
+      }
       InodePointer real_inode = get_inode(inodenr);
       std::ostringstream oss;
       oss << "inode." << inodenr;
-      restore_inode(inodenr, real_inode, oss.str());
+      if (seqnr != latest)
+	oss << '@' << seqnr;
+      restore_inode(inodenr, real_inode, oss.str(), seqnr);
       is >> comma;
     };
   }

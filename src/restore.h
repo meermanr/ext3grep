@@ -32,8 +32,9 @@
 
 // Real constants.
 std::string const outputdir = "RESTORED_FILES/";
+int const latest = -1;
 
-void restore_inode(int inodenr, InodePointer real_inode, std::string const& outfile);
+void restore_inode(int inodenr, InodePointer real_inode, std::string const& outfile, int seqnr = latest);
 
 enum get_undeleted_inode_type {
   ui_no_inode,
@@ -42,6 +43,6 @@ enum get_undeleted_inode_type {
   ui_inode_too_old
 };
 
-get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence = NULL);
+get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence = NULL, int seqnr = latest);
 
 #endif // RESTORE_H

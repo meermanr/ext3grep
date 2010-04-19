@@ -49,10 +49,10 @@
 void iterate_over_all_blocks_of__with__restore_file_action(void) { restore_file_action(0, 0, NULL); }
 #endif
 
-get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence)
+get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* sequence, int seqnr)
 {
   InodePointer real_inode(get_inode(inodenr));
-  if (!real_inode->is_deleted())
+  if (!real_inode->is_deleted() && seqnr == latest)
   {
     inode = *real_inode;
     return ui_real_inode;
@@ -62,7 +62,7 @@ get_undeleted_inode_type get_undeleted_inode(int inodenr, Inode& inode, int* seq
   for (std::vector<std::pair<int, Inode> >::iterator iter = inodes.begin(); iter != inodes.end(); ++iter)
   {
     Inode const& journal_inode(iter->second);
-    if (!journal_inode.is_deleted())
+    if (!journal_inode.is_deleted() && (seqnr == latest || iter->first == seqnr))
     {
       inode = journal_inode;
       if (sequence)
@@ -169,7 +169,7 @@ void restore_file(std::string const& outfile)
   restore_inode(inodenr, real_inode, outfile);
 }
 
-void restore_inode(int inodenr, InodePointer real_inode, std::string const& outfile)
+void restore_inode(int inodenr, InodePointer real_inode, std::string const& outfile, int seqnr)
 {
   std::string outputdir_outfile = outputdir + outfile;
   if (is_directory(*real_inode))
@@ -203,11 +203,16 @@ void restore_inode(int inodenr, InodePointer real_inode, std::string const& outf
   else
   {
     Inode inode;
-    get_undeleted_inode_type res = get_undeleted_inode(inodenr, inode);
+    get_undeleted_inode_type res = get_undeleted_inode(inodenr, inode, NULL, seqnr);
     if (res != ui_real_inode && res != ui_journal_inode)
     {
       if (res == ui_no_inode)
-	std::cout << "Cannot find an undeleted inode for file \"" << outfile << "\".\n";
+      {
+	std::cout << "Cannot find an undeleted inode for file \"" << outfile << "\"";
+	if (seqnr != latest)
+	  std::cout << " in journal entry with sequence number " << seqnr;
+	std::cout << ".\n";
+      }
       else
         std::cout << "Not undeleting \"" << outfile << "\" because it was deleted before " << commandline_after << " (" << inode.ctime() << ")\n";
       return;
